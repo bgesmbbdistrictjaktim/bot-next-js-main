@@ -726,6 +726,7 @@ export async function POST(req: NextRequest) {
           .limit(5)
         if (!results || results.length === 0) {
           await (client as any).sendMessage(chatId, '❌ Tidak ada order yang cocok.')
+          await handleStart(client as any, chatId, telegramId)
         } else {
           for (const order of results) {
             const { data: evidence } = await supabaseAdmin.from('evidence').select('*').eq('order_id', order.order_id).maybeSingle()
