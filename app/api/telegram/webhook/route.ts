@@ -137,6 +137,8 @@ function formatOrderDetail(order: any, evidence?: any, createdByName?: string, a
 
 // Simple in-memory dedupe for dev to prevent double-processing
 const processedUpdateIds = new Set<number>()
+// Guard to throttle progress messages per chat
+const progressSpamGuard = new Map<number, number>()
 
 export async function POST(req: NextRequest) {
   try {
@@ -170,6 +172,17 @@ export async function POST(req: NextRequest) {
 
     if (!chatId || isFromBot) {
       return NextResponse.json({ ok: true })
+    }
+
+    // Ignore stale updates (Telegram may retry old updates when webhook failed)
+    const nowSec = Math.floor(Date.now() / 1000)
+    const msgDate: number | undefined = update?.message?.date || update?.callback_query?.message?.date
+    if (typeof msgDate === 'number') {
+      const age = nowSec - msgDate
+      if (age > 60) {
+        // Drop updates older than 60s to prevent unwanted replays
+        return NextResponse.json({ ok: true, dropped: 'stale_update' })
+      }
     }
 
     const client = createHttpBotClient(token)
@@ -521,6 +534,19 @@ export async function POST(req: NextRequest) {
         { reply_markup: { force_reply: true } }
       )
     } else if (text === '📊 Show Order On Progress') {
+      // Role must be HD
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melihat order on progress.')
+        return NextResponse.json({ ok: true })
+      }
+      // Throttle per chat: ignore if sent within last 60s
+      const last = progressSpamGuard.get(chatId)
+      if (last && (nowSec - last) < 60) {
+        return NextResponse.json({ ok: true, dropped: 'progress_throttled' })
+      }
+      progressSpamGuard.set(chatId, nowSec)
+
       const { data: orders, error } = await supabaseAdmin
         .from('orders')
         .select('*')
@@ -579,6 +605,12 @@ export async function POST(req: NextRequest) {
         }
       }
     } else if (text === '✅ Show Order Completed') {
+      // Require HD role for completed list as well
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melihat order completed.')
+        return NextResponse.json({ ok: true })
+      }
       const { data: orders } = await supabaseAdmin
         .from('orders')
         .select('*')
@@ -591,7 +623,7 @@ export async function POST(req: NextRequest) {
         const header = '✅ Order Completed/Closed (Top 10)\n'
         await (client as any).sendMessage(chatId, header)
         for (const order of orders) {
-          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}`, {
+          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}` , {
             reply_markup: {
               inline_keyboard: [[{ text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }]]
             }
