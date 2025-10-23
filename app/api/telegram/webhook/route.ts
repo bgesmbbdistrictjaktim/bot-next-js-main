@@ -9,6 +9,8 @@ import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
 import { getUserRole } from '@/lib/botUtils'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 10
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,10 +49,14 @@ export async function POST(req: NextRequest) {
         await (showProgressMenu as any)(client as any, chatId, telegramId)
       } else if (data === 'upload_evidence') {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
+      } else if (data && data.startsWith('tech_stage_progress_')) {
+        // Callback dari daftar penugasan teknisi untuk membuka menu update progress
+        await (showProgressMenu as any)(client as any, chatId, telegramId)
       }
       return NextResponse.json({ ok: true })
     }
 
+    // Slash commands
     if (text === '/start') {
       await (checkUserRegistration as any)(client as any, chatId, telegramId, firstName, lastName)
     } else if (text === '/help') {
@@ -76,6 +82,46 @@ export async function POST(req: NextRequest) {
       } else {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
       }
+    // Reply keyboard texts (non-slash)
+    } else if (text === '📋 Order Saya') {
+      const role = await (getUserRole as any)(telegramId)
+      if (!role) {
+        await (client as any).sendMessage(chatId, '❌ Anda belum terdaftar. Gunakan /start untuk mendaftar.')
+      } else {
+        await (showMyOrders as any)(client as any, chatId, telegramId, role)
+      }
+    } else if (text === '📝 Update Progress') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'Teknisi') {
+        await (client as any).sendMessage(chatId, '❌ Hanya Teknisi yang dapat update progress.')
+      } else {
+        await (showProgressMenu as any)(client as any, chatId, telegramId)
+      }
+    } else if (text === '📸 Upload Evidence') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'Teknisi') {
+        await (client as any).sendMessage(chatId, '❌ Hanya Teknisi yang dapat upload evidence.')
+      } else {
+        await (showEvidenceMenu as any)(client as any, chatId, telegramId)
+      }
+    } else if (text === '❓ Bantuan') {
+      await handleHelp(client as any, chatId, telegramId)
+    } else if (text === '📋 Buat Order') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role === 'HD') {
+        await (client as any).sendMessage(chatId, 'ℹ️ Fitur "Buat Order" sedang dimigrasikan ke webhook. Gunakan menu lain atau /help sementara ini.')
+      } else {
+        await (showMyOrders as any)(client as any, chatId, telegramId, role)
+      }
+    } else if (
+      text === '🔍 Cek Order' ||
+      text === '📊 Show Order On Progress' ||
+      text === '✅ Show Order Completed' ||
+      text === '🚀 Update SOD' ||
+      text === '🎯 Update E2E' ||
+      text === '👥 Assign Teknisi'
+    ) {
+      await (client as any).sendMessage(chatId, 'ℹ️ Fitur HD ini belum tersedia di webhook dan sedang dalam proses migrasi. Gunakan /help untuk alternatif yang tersedia.')
     } else {
       await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.', {
         parse_mode: 'HTML',
