@@ -250,7 +250,14 @@ export async function POST(req: NextRequest) {
       // Handle registration callbacks first
       await (handleRegistrationCallback as any)(client as any, update.callback_query)
 
-      if (data === 'my_orders') {
+      if (data === 'create_order') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
+        } else {
+          await (startCreateOrderFlow as any)(client as any, chatId, telegramId)
+        }
+      } else if (data === 'my_orders') {
         const role = await (getUserRole as any)(telegramId)
         if (!role) {
           await (client as any).sendMessage(chatId, '❌ Anda belum terdaftar. Gunakan /start untuk mendaftar.')
