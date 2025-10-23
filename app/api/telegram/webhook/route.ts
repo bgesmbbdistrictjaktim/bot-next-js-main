@@ -11,6 +11,7 @@ import { getUserRole } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
+import { getReplyMenuKeyboard } from '@/lib/botMenus'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -255,6 +256,8 @@ export async function POST(req: NextRequest) {
             assignedAtIso = order.updated_at
           }
           await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
+          const role = await (getUserRole as any)(telegramId)
+          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
         }
       } else if (data && data.startsWith('detail_order_')) {
         const orderId = data.replace('detail_order_', '')
@@ -279,6 +282,8 @@ export async function POST(req: NextRequest) {
           }
 
           await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
+          const role = await (getUserRole as any)(telegramId)
+          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
         }
       } else if (data && data.startsWith('refresh_order_')) {
         const orderId = data.replace('refresh_order_', '')
@@ -421,6 +426,8 @@ export async function POST(req: NextRequest) {
             }
             await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
           }
+          const role = await (getUserRole as any)(telegramId)
+          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
         }
         return NextResponse.json({ ok: true })
       }
