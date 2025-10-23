@@ -394,6 +394,84 @@ export async function POST(req: NextRequest) {
         const payload = data.replace('select_direct_tech_', '')
         const [orderId, userId] = payload.split('_')
         await (assignTechnicianDirectly as any)(client as any, chatId, telegramId, orderId, userId)
+      } else if (data && data.startsWith('completed_month_')) {
+        const parts = data.split('_')
+        const month = Number(parts[2])
+        const year = Number(parts[3])
+        const startDate = new Date(year, month - 1, 1)
+        const endDate = new Date(year, month, 0, 23, 59, 59)
+
+        const { data: orders, error } = await supabaseAdmin
+          .from('orders')
+          .select('*')
+          .not('e2e_timestamp', 'is', null)
+          .gte('e2e_timestamp', startDate.toISOString())
+          .lte('e2e_timestamp', endDate.toISOString())
+          .order('order_id', { ascending: true })
+
+        const monthName = startDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+        if (error) {
+          await (client as any).sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil data order.')
+        } else if (!orders || orders.length === 0) {
+          await (client as any).sendMessage(chatId, `✅ ORDER COMPLETED - ${monthName}\n\nTidak ada order yang completed pada bulan ini.`)
+        } else {
+          let message = `✅ ORDER COMPLETED - ${monthName}\n\n`
+          message += `Total: ${orders.length} order completed\n\n`
+
+          for (let i = 0; i < orders.length; i++) {
+            const order = orders[i]
+            const completedDate = formatWIB(order.e2e_timestamp)
+            const createdDate = formatWIB(order.created_at)
+            const sodDate = order.sod_timestamp ? formatWIB(order.sod_timestamp) : ''
+
+            message += `${i + 1}.📋 ${order.order_id}/${order.customer_name}\n`
+            message += `Status: ✅ Completed\n`
+            message += `STO: ${order.sto || ''}\n`
+            message += `Type: ${order.transaction_type || ''}\n`
+            message += `Layanan: ${order.service_type || ''}\n`
+            message += `Dibuat: ${createdDate}\n`
+            message += `SOD: ${sodDate}\n`
+            message += `E2E: ${completedDate}\n\n`
+          }
+
+          const keyboard = [[{ text: '🔙 Kembali ke Menu Bulan', callback_data: 'back_to_completed_menu' }]]
+
+          if (message.length > 4000) {
+            const lines = message.split('\n')
+            let buf = ''
+            for (let idx = 0; idx < lines.length; idx++) {
+              const line = lines[idx]
+              if ((buf + line + '\n').length > 3500) {
+                await (client as any).sendMessage(chatId, buf, { parse_mode: 'Markdown' })
+                buf = ''
+              }
+              buf += line + '\n'
+            }
+            await (client as any).sendMessage(chatId, buf.trim(), { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } })
+          } else {
+            await (client as any).sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } })
+          }
+        }
+      } else if (data === 'back_to_completed_menu') {
+        const currentDate = new Date()
+        const currentMonth = currentDate.getMonth() + 1
+        const currentYear = currentDate.getFullYear()
+
+        let message = '✅ ORDER COMPLETED\n\n'
+        message += 'Pilih bulan untuk melihat order yang sudah completed:\n\n'
+
+        const keyboard: any[] = []
+        for (let i = 0; i < 2; i++) {
+          const d = new Date(currentYear, currentMonth - 1 - i, 1)
+          const month = d.getMonth() + 1
+          const year = d.getFullYear()
+          const monthName = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+          keyboard.push([{ text: `📅 ${monthName}`, callback_data: `completed_month_${month.toString().padStart(2, '0')}_${year}` }])
+        }
+        keyboard.push([{ text: '🔙 Kembali ke Menu Utama', callback_data: 'back_to_main' }])
+        await (client as any).sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } })
+      } else if (data === 'back_to_main') {
+        await handleStart(client as any, chatId, telegramId)
       }
       return NextResponse.json({ ok: true })
     }
@@ -597,39 +675,38 @@ export async function POST(req: NextRequest) {
             // try to split at the last newline within the chunk
             let splitPos = message.lastIndexOf('\n', end)
             if (splitPos <= start) splitPos = end
-            await (client as any).sendMessage(chatId, message.slice(start, splitPos), { parse_mode: 'Markdown' })
+            await (client as any).sendMessage(chatId, message.slice(start, splitPos))
             start = splitPos
           }
         } else {
-          await (client as any).sendMessage(chatId, message, { parse_mode: 'Markdown' })
+          await (client as any).sendMessage(chatId, message)
         }
       }
     } else if (text === '✅ Show Order Completed') {
-      // Require HD role for completed list as well
+      // Mirror bot.js: show month picker first
       const role = await (getUserRole as any)(telegramId)
       if (role !== 'HD') {
         await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melihat order completed.')
         return NextResponse.json({ ok: true })
       }
-      const { data: orders } = await supabaseAdmin
-        .from('orders')
-        .select('*')
-        .in('status', ['Completed', 'Closed'])
-        .order('updated_at', { ascending: false })
-        .limit(10)
-      if (!orders || orders.length === 0) {
-        await (client as any).sendMessage(chatId, '✅ Belum ada order Completed/Closed terbaru.')
-      } else {
-        const header = '✅ Order Completed/Closed (Top 10)\n'
-        await (client as any).sendMessage(chatId, header)
-        for (const order of orders) {
-          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}` , {
-            reply_markup: {
-              inline_keyboard: [[{ text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }]]
-            }
-          })
-        }
+      const currentDate = new Date()
+      const currentMonth = currentDate.getMonth() + 1
+      const currentYear = currentDate.getFullYear()
+
+      let message = '✅ ORDER COMPLETED\n\n'
+      message += 'Pilih bulan untuk melihat order yang sudah completed:\n\n'
+
+      const keyboard: any[] = []
+      for (let i = 0; i < 2; i++) {
+        const d = new Date(currentYear, currentMonth - 1 - i, 1)
+        const month = d.getMonth() + 1
+        const year = d.getFullYear()
+        const monthName = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+        keyboard.push([{ text: `📅 ${monthName}`, callback_data: `completed_month_${month.toString().padStart(2, '0')}_${year}` }])
       }
+      keyboard.push([{ text: '🔙 Kembali ke Menu Utama', callback_data: 'back_to_main' }])
+
+      await (client as any).sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } })
     } else if (text === '👥 Assign Teknisi') {
       const role = await (getUserRole as any)(telegramId)
       if (role !== 'HD') {
