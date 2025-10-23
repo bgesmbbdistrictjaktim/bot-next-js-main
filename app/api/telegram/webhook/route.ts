@@ -503,23 +503,61 @@ export async function POST(req: NextRequest) {
         { reply_markup: { force_reply: true } }
       )
     } else if (text === '📊 Show Order On Progress' || (text || '').toLowerCase().includes('show order on progress')) {
-      const { data: orders } = await supabaseAdmin
+      const { data: orders, error } = await supabaseAdmin
         .from('orders')
         .select('*')
-        .eq('status', 'In Progress')
-        .order('updated_at', { ascending: false })
-        .limit(10)
-      if (!orders || orders.length === 0) {
-        await (client as any).sendMessage(chatId, '📊 Tidak ada order In Progress.')
+        .is('e2e_timestamp', null)
+        .order('order_id', { ascending: true })
+
+      if (error) {
+        await (client as any).sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil data order on progress.')
+      } else if (!orders || orders.length === 0) {
+        await (client as any).sendMessage(chatId,
+          '📊 ORDER ON PROGRESS\n\n' +
+          'Tidak ada order yang sedang dalam progress.\n\n' +
+          '✅ Semua order sudah completed.'
+        )
       } else {
-        const header = '📊 Order On Progress (Top 10)\n'
-        await (client as any).sendMessage(chatId, header)
-        for (const order of orders) {
-          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}`, {
-            reply_markup: {
-              inline_keyboard: [[{ text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }]]
-            }
-          })
+        let message = '📊 ORDER ON PROGRESS\n\n'
+        message += `Total: ${orders.length} order sedang dalam progress\n\n`
+
+        const statusEmojiMap: Record<string, string> = {
+          'Pending': '⏳',
+          'In Progress': '🔄',
+          'On Hold': '⏸️',
+          'Completed': '✅',
+          'Closed': '🔒'
+        }
+
+        for (let i = 0; i < orders.length; i++) {
+          const order = orders[i]
+          const statusEmoji = statusEmojiMap[order.status] || '⚪'
+          const createdDate = formatWIB(order.created_at)
+          const sodDate = order.sod_timestamp ? formatWIB(order.sod_timestamp) : ''
+
+          message += `${i + 1}. ${order.order_id}/${order.customer_name}\n`
+          message += `Status: ${statusEmoji} ${order.status}\n`
+          message += `STO: ${order.sto || ''}\n`
+          message += `Type: ${order.transaction_type || ''}\n`
+          message += `Layanan: ${order.service_type || ''}\n`
+          message += `Dibuat: ${createdDate}\n`
+          message += `SOD: ${sodDate}\n\n`
+        }
+
+        if (message.length > 4000) {
+          // Simple split by chunks while respecting newlines
+          let start = 0
+          const chunkSize = 3500
+          while (start < message.length) {
+            const end = Math.min(start + chunkSize, message.length)
+            // try to split at the last newline within the chunk
+            let splitPos = message.lastIndexOf('\n', end)
+            if (splitPos <= start) splitPos = end
+            await (client as any).sendMessage(chatId, message.slice(start, splitPos), { parse_mode: 'Markdown' })
+            start = splitPos
+          }
+        } else {
+          await (client as any).sendMessage(chatId, message, { parse_mode: 'Markdown' })
         }
       }
     } else if (text === '✅ Show Order Completed' || (text || '').toLowerCase().includes('show order completed')) {
