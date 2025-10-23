@@ -10,6 +10,7 @@ import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
 import { getUserRole } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
+import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -304,6 +305,13 @@ export async function POST(req: NextRequest) {
         await (assignTechnicianToAllStages as any)(client as any, chatId, telegramId, oid, techId)
       } else if (data === 'back_to_assignment_list') {
         await (showOrderSelectionForStageAssignment as any)(client as any, chatId, telegramId)
+      } else if (data && data.startsWith('direct_assign_')) {
+        const orderId = data.replace('direct_assign_', '')
+        await (showDirectAssignmentTechnicians as any)(client as any, chatId, telegramId, orderId)
+      } else if (data && data.startsWith('select_direct_tech_')) {
+        const payload = data.replace('select_direct_tech_', '')
+        const [orderId, userId] = payload.split('_')
+        await (assignTechnicianDirectly as any)(client as any, chatId, telegramId, orderId, userId)
       }
       return NextResponse.json({ ok: true })
     }
@@ -311,6 +319,13 @@ export async function POST(req: NextRequest) {
     // 2) Handle replies to ODP/SN prompts dan pencarian order
     if (update?.message?.reply_to_message && typeof text === 'string') {
       const replyText: string = update.message.reply_to_message.text || ''
+
+      // Create Order flow replies
+      const handledCreate = await (handleCreateOrderReply as any)(client as any, chatId, telegramId, replyText, text)
+      if (handledCreate) {
+        return NextResponse.json({ ok: true })
+      }
+
       // ODP
       const odpMatch = replyText.match(/Masukkan nama ODP untuk ORDER\s+(\S+)/)
       if (odpMatch) {
@@ -419,9 +434,9 @@ export async function POST(req: NextRequest) {
     } else if (text === '📋 Buat Order') {
       const role = await (getUserRole as any)(telegramId)
       if (role === 'HD') {
-        await (client as any).sendMessage(chatId, 'ℹ️ Fitur "Buat Order" sedang dimigrasikan ke webhook. Gunakan menu lain atau /help sementara ini.')
+        await (startCreateOrderFlow as any)(client as any, chatId, telegramId)
       } else {
-        await (showMyOrders as any)(client as any, chatId, telegramId, role)
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
       }
     } else if ((text || '').toLowerCase().includes('cek order')) {
       await (client as any).sendMessage(chatId, '🔍 Masukkan ORDER ID atau No HP pelanggan:', { reply_markup: { force_reply: true } })
