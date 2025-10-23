@@ -135,6 +135,9 @@ function formatOrderDetail(order: any, evidence?: any, createdByName?: string, a
   return lines.join('\n')
 }
 
+// Simple in-memory dedupe for dev to prevent double-processing
+const processedUpdateIds = new Set<number>()
+
 export async function POST(req: NextRequest) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
@@ -143,6 +146,18 @@ export async function POST(req: NextRequest) {
     }
 
     const update = await req.json()
+    const updateId: number | undefined = update?.update_id
+
+    // Deduplicate the same update id (dev mode may double invoke)
+    if (typeof updateId === 'number') {
+      if (processedUpdateIds.has(updateId)) {
+        return NextResponse.json({ ok: true })
+      }
+      // keep set small
+      if (processedUpdateIds.size > 200) processedUpdateIds.clear()
+      processedUpdateIds.add(updateId)
+    }
+
     const chatId: number | undefined = update?.message?.chat?.id || update?.callback_query?.message?.chat?.id
     const text: string | undefined = update?.message?.text || update?.callback_query?.data
     const fromId: number | undefined = update?.message?.from?.id || update?.callback_query?.from?.id
@@ -150,7 +165,10 @@ export async function POST(req: NextRequest) {
     const firstName: string = update?.message?.from?.first_name || update?.callback_query?.from?.first_name || 'User'
     const lastName: string = update?.message?.from?.last_name || update?.callback_query?.from?.last_name || ''
 
-    if (!chatId) {
+    // Ignore messages sent by the bot itself to prevent loops
+    const isFromBot = update?.message?.from?.is_bot === true
+
+    if (!chatId || isFromBot) {
       return NextResponse.json({ ok: true })
     }
 
@@ -502,7 +520,7 @@ export async function POST(req: NextRequest) {
         `🔍 Cek Detail Order\n\nSilakan masukkan Order ID yang ingin Anda cari:\n\n📝 Format: Ketik order ID (contoh: ORD-001)\n💡  Pastikan Order ID yang dimasukkan benar`,
         { reply_markup: { force_reply: true } }
       )
-    } else if (text === '📊 Show Order On Progress' || (text || '').toLowerCase().includes('show order on progress')) {
+    } else if (text === '📊 Show Order On Progress') {
       const { data: orders, error } = await supabaseAdmin
         .from('orders')
         .select('*')
@@ -560,7 +578,7 @@ export async function POST(req: NextRequest) {
           await (client as any).sendMessage(chatId, message, { parse_mode: 'Markdown' })
         }
       }
-    } else if (text === '✅ Show Order Completed' || (text || '').toLowerCase().includes('show order completed')) {
+    } else if (text === '✅ Show Order Completed') {
       const { data: orders } = await supabaseAdmin
         .from('orders')
         .select('*')
