@@ -42,6 +42,46 @@ async function getTelegramFileUrl(token: string, fileId: string): Promise<string
   return `https://api.telegram.org/file/bot${token}/${filePath}`
 }
 
+function formatOrderSummary(order: any) {
+  const statusEmojiMap: Record<string, string> = {
+    'Pending': '⏳',
+    'In Progress': '🔄',
+    'On Hold': '⏸️',
+    'Completed': '✅',
+    'Closed': '🔒'
+  }
+  const statusEmoji = statusEmojiMap[order.status] || '❓'
+  const lines = [
+    `🆔 Order: ${order.order_id || order.id}`,
+    `👤 ${order.customer_name || '-'}`,
+    `📞 ${order.contact || '-'}`,
+    `📍 ${order.customer_address || '-'}`,
+    `⚙️ Layanan: ${order.service_type || '-'}`,
+    `📌 STO: ${order.sto || '-'}`,
+    `📈 Status: ${statusEmoji} ${order.status}`,
+  ]
+  return lines.join('\n')
+}
+
+function formatOrderDetail(order: any, evidence?: any) {
+  const lines: string[] = []
+  lines.push('📄 Detail Order')
+  lines.push('')
+  lines.push(formatOrderSummary(order))
+  lines.push('')
+  lines.push(`🚀 SOD: ${order.sod_time || '-'}`)
+  lines.push(`🎯 E2E: ${order.e2e_time || '-'}`)
+  lines.push(`👷 Teknisi: ${order.assigned_technician || '-'}`)
+  lines.push('')
+  if (evidence) {
+    const count = ['photo_sn_ont','photo_technician_customer','photo_customer_house','photo_odp_front','photo_odp_inside','photo_label_dc','photo_test_result'].filter(k => evidence[k]).length
+    lines.push(`📸 Evidence: ${count}/7 foto`)
+    lines.push(`• ODP: ${evidence.odp_name || '-'}`)
+    lines.push(`• SN ONT: ${evidence.ont_sn || '-'}`)
+  }
+  return lines.join('\n')
+}
+
 export async function POST(req: NextRequest) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
@@ -160,6 +200,53 @@ export async function POST(req: NextRequest) {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
       } else if (data && data.startsWith('tech_stage_progress_')) {
         await (showProgressMenu as any)(client as any, chatId, telegramId)
+      } else if (data === 'search_order') {
+        await (client as any).sendMessage(chatId, '🔍 Masukkan ORDER ID atau No HP pelanggan:', { reply_markup: { force_reply: true } })
+      } else if (data && data.startsWith('view_order_')) {
+        const orderId = data.replace('view_order_', '')
+        const { data: order } = await supabaseAdmin.from('orders').select('*').eq('order_id', orderId).maybeSingle()
+        if (!order) {
+          await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
+        } else {
+          const summary = formatOrderSummary(order)
+          await (client as any).sendMessage(chatId, `${summary}\n\nPilih aksi:`, {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔄 Refresh', callback_data: `refresh_order_${order.order_id}` },
+                  { text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }
+                ],
+                [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
+              ]
+            }
+          })
+        }
+      } else if (data && data.startsWith('detail_order_')) {
+        const orderId = data.replace('detail_order_', '')
+        const { data: order } = await supabaseAdmin.from('orders').select('*').eq('order_id', orderId).maybeSingle()
+        const { data: evidence } = await supabaseAdmin.from('evidence').select('*').eq('order_id', orderId).maybeSingle()
+        if (!order) {
+          await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
+        } else {
+          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence)}`, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔄 Refresh', callback_data: `refresh_order_${orderId}` }],
+                [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
+              ]
+            }
+          })
+        }
+      } else if (data && data.startsWith('refresh_order_')) {
+        const orderId = data.replace('refresh_order_', '')
+        const { data: order } = await supabaseAdmin.from('orders').select('*').eq('order_id', orderId).maybeSingle()
+        if (!order) {
+          await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
+        } else {
+          await (client as any).sendMessage(chatId, `🔄 Data terbaru:\n\n${formatOrderSummary(order)}`)
+        }
+      } else if (data === 'back_to_hd_menu') {
+        await handleStart(client as any, chatId, telegramId)
       } else if (data && data.startsWith('evidence_order_')) {
         const orderId = data.split('_')[2]
         // Fetch order basic info
@@ -175,7 +262,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // 2) Handle replies to ODP/SN prompts
+    // 2) Handle replies to ODP/SN prompts dan pencarian order
     if (update?.message?.reply_to_message && typeof text === 'string') {
       const replyText: string = update.message.reply_to_message.text || ''
       // ODP
@@ -199,6 +286,36 @@ export async function POST(req: NextRequest) {
           .from('evidence')
           .upsert({ order_id: orderId, ont_sn: text }, { onConflict: 'order_id' })
         await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
+        return NextResponse.json({ ok: true })
+      }
+      // Pencarian Order
+      const searchMatch = replyText.match(/Masukkan ORDER ID atau No HP pelanggan/i)
+      if (searchMatch) {
+        const q = text.trim()
+        const { data: results } = await supabaseAdmin
+          .from('orders')
+          .select('*')
+          .or(`order_id.eq.${q},contact.ilike.%${q}%,customer_name.ilike.%${q}%`)
+          .order('updated_at', { ascending: false })
+          .limit(5)
+        if (!results || results.length === 0) {
+          await (client as any).sendMessage(chatId, '❌ Tidak ada order yang cocok.')
+        } else {
+          for (const order of results) {
+            const summary = formatOrderSummary(order)
+            await (client as any).sendMessage(chatId, `${summary}`, {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: '🔄 Refresh', callback_data: `refresh_order_${order.order_id}` },
+                    { text: '📄 Detail', callback_data: `detail_order_${order.order_id}` },
+                  ],
+                  [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
+                ]
+              }
+            })
+          }
+        }
         return NextResponse.json({ ok: true })
       }
     }
@@ -260,15 +377,54 @@ export async function POST(req: NextRequest) {
       } else {
         await (showMyOrders as any)(client as any, chatId, telegramId, role)
       }
+    } else if ((text || '').toLowerCase().includes('cek order')) {
+      await (client as any).sendMessage(chatId, '🔍 Masukkan ORDER ID atau No HP pelanggan:', { reply_markup: { force_reply: true } })
+    } else if (text === '📊 Show Order On Progress' || (text || '').toLowerCase().includes('show order on progress')) {
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('*')
+        .eq('status', 'In Progress')
+        .order('updated_at', { ascending: false })
+        .limit(10)
+      if (!orders || orders.length === 0) {
+        await (client as any).sendMessage(chatId, '📊 Tidak ada order In Progress.')
+      } else {
+        const header = '📊 Order On Progress (Top 10)\n'
+        await (client as any).sendMessage(chatId, header)
+        for (const order of orders) {
+          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}`, {
+            reply_markup: {
+              inline_keyboard: [[{ text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }]]
+            }
+          })
+        }
+      }
+    } else if (text === '✅ Show Order Completed' || (text || '').toLowerCase().includes('show order completed')) {
+      const { data: orders } = await supabaseAdmin
+        .from('orders')
+        .select('*')
+        .in('status', ['Completed', 'Closed'])
+        .order('updated_at', { ascending: false })
+        .limit(10)
+      if (!orders || orders.length === 0) {
+        await (client as any).sendMessage(chatId, '✅ Belum ada order Completed/Closed terbaru.')
+      } else {
+        const header = '✅ Order Completed/Closed (Top 10)\n'
+        await (client as any).sendMessage(chatId, header)
+        for (const order of orders) {
+          await (client as any).sendMessage(chatId, `${formatOrderSummary(order)}`, {
+            reply_markup: {
+              inline_keyboard: [[{ text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }]]
+            }
+          })
+        }
+      }
     } else if (
-      text === '🔍 Cek Order' ||
-      text === '📊 Show Order On Progress' ||
-      text === '✅ Show Order Completed' ||
       text === '🚀 Update SOD' ||
       text === '🎯 Update E2E' ||
       text === '👥 Assign Teknisi'
     ) {
-      await (client as any).sendMessage(chatId, 'ℹ️ Fitur HD ini belum tersedia di webhook dan sedang dalam proses migrasi. Gunakan /help untuk alternatif yang tersedia.')
+      await (client as any).sendMessage(chatId, 'ℹ️ Fitur ini sedang dimigrasikan. Akan segera tersedia.')
     } else {
       await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.', {
         parse_mode: 'HTML',
