@@ -257,11 +257,13 @@ export async function POST(req: NextRequest) {
     // Ignore stale updates (Telegram may retry old updates when webhook failed)
     const nowSec = Math.floor(Date.now() / 1000)
     const msgDate: number | undefined = update?.message?.date || update?.callback_query?.message?.date
+    const isCallback = !!update?.callback_query
     if (typeof msgDate === 'number') {
       const age = nowSec - msgDate
-      if (age > 60) {
-        // Drop updates older than 60s to prevent unwanted replays
-        return NextResponse.json({ ok: true, dropped: 'stale_update' })
+      // Hanya drop untuk pesan biasa yang sudah sangat lama (>5 menit).
+      // Untuk callback, jangan drop — karena pengguna bisa klik tombol lama.
+      if (!isCallback && age > 300) {
+        return NextResponse.json({ ok: true, dropped: 'stale_message' })
       }
     }
 
@@ -642,7 +644,18 @@ export async function POST(req: NextRequest) {
               .select('*')
               .maybeSingle()
             if (insertError || !inserted) {
-              await (client as any).sendMessage(chatId, '❌ Gagal membuat order. Coba lagi.')
+              const reasonParts = [] as string[]
+              if (insertError?.message) reasonParts.push(insertError.message)
+              if ((insertError as any)?.details) reasonParts.push((insertError as any).details)
+              if ((insertError as any)?.hint) reasonParts.push((insertError as any).hint)
+              if ((insertError as any)?.code) reasonParts.push(`code=${(insertError as any).code}`)
+              const reasonText = reasonParts.length ? reasonParts.join(' | ') : 'Tidak diketahui'
+              await (client as any).sendMessage(
+                chatId,
+                `❌ Gagal membuat order.\n\nAlasan: ${reasonText}\n\nSilakan pilih teknisi lain atau ulangi proses.`,
+                { parse_mode: 'Markdown' }
+              )
+              // Tetap pertahankan sesi agar pengguna bisa coba lagi memilih teknisi
             } else {
               // Ambil nama teknisi dan telegram id untuk notifikasi
               const { data: tech } = await supabaseAdmin
