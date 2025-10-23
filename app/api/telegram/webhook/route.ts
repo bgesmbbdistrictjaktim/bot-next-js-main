@@ -233,7 +233,11 @@ export async function POST(req: NextRequest) {
       } else if (data && data.startsWith('tech_stage_progress_')) {
         await (showProgressMenu as any)(client as any, chatId, telegramId)
       } else if (data === 'search_order') {
-        await (client as any).sendMessage(chatId, '🔍 Masukkan ORDER ID atau No HP pelanggan:', { reply_markup: { force_reply: true } })
+        await (client as any).sendMessage(
+          chatId,
+          `🔍 Cek Detail Order\n\nSilakan masukkan Order ID yang ingin Anda cari:\n\n📝 Format: Ketik order ID (contoh: ORD-001)\n💡  Pastikan Order ID yang dimasukkan benar`,
+          { reply_markup: { force_reply: true } }
+        )
       } else if (data && data.startsWith('view_order_')) {
         const orderId = data.replace('view_order_', '')
         const { data: order } = await supabaseAdmin.from('orders').select('*').eq('order_id', orderId).maybeSingle()
@@ -396,7 +400,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true })
       }
       // Pencarian Order
-      const searchMatch = replyText.match(/Masukkan ORDER ID atau No HP pelanggan/i)
+      const searchMatch = replyText.match(/(Masukkan ORDER ID atau No HP pelanggan|Cek Detail Order)/i)
       if (searchMatch) {
         const q = text.trim()
         const { data: results } = await supabaseAdmin
@@ -491,7 +495,11 @@ export async function POST(req: NextRequest) {
         await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
       }
     } else if ((text || '').toLowerCase().includes('cek order')) {
-      await (client as any).sendMessage(chatId, '🔍 Masukkan ORDER ID atau No HP pelanggan:', { reply_markup: { force_reply: true } })
+      await (client as any).sendMessage(
+        chatId,
+        `🔍 Cek Detail Order\n\nSilakan masukkan Order ID yang ingin Anda cari:\n\n📝 Format: Ketik order ID (contoh: ORD-001)\n💡  Pastikan Order ID yang dimasukkan benar`,
+        { reply_markup: { force_reply: true } }
+      )
     } else if (text === '📊 Show Order On Progress' || (text || '').toLowerCase().includes('show order on progress')) {
       const { data: orders } = await supabaseAdmin
         .from('orders')
