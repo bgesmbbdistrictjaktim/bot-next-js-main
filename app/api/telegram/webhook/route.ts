@@ -9,6 +9,7 @@ import { showProgressMenu } from '@/lib/botHandlers/progress'
 import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
 import { getUserRole } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
+import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -62,7 +63,7 @@ function formatOrderSummary(order: any) {
   ]
   return lines.join('\n')
 }
-
+//INI FORMAT MENU HANDLER CEK ORDER
 function formatOrderDetail(order: any, evidence?: any) {
   const lines: string[] = []
   lines.push('📄 Detail Order')
@@ -258,6 +259,51 @@ export async function POST(req: NextRequest) {
         await (client as any).sendMessage(chatId, `📸 Upload Evidence\n\n🆔 Order ID: ${orderId}\n👤 Customer: ${order?.customer_name || '-'}\n📍 Alamat: ${order?.customer_address || '-'}\n\nMasukkan nama ODP untuk ORDER ${orderId}:`, {
           reply_markup: { force_reply: true }
         })
+      } else if (data === 'assign_technician_stage') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melakukan assignment.')
+        } else {
+          await (showOrderSelectionForStageAssignment as any)(client as any, chatId, telegramId)
+        }
+      } else if (data && data.startsWith('stage_assign_order_')) {
+        const token = data.replace('stage_assign_order_', '')
+        // Prefer treating token as order_id; if not found, fallback to index-based lookup
+        let resolvedOrderId = token
+        const { data: foundOrder } = await supabaseAdmin.from('orders').select('order_id').eq('order_id', token).maybeSingle()
+        if (!foundOrder) {
+          const { data: activeOrders } = await supabaseAdmin
+            .from('orders')
+            .select('order_id')
+            .in('status', ['Pending', 'In Progress', 'On Hold'])
+            .order('created_at', { ascending: false })
+          const idx = Number(token)
+          if (activeOrders && Number.isInteger(idx) && idx >= 0 && idx < activeOrders.length) {
+            resolvedOrderId = activeOrders[idx].order_id
+          }
+        }
+        await (showStageAssignmentMenu as any)(client as any, chatId, telegramId, resolvedOrderId)
+      } else if (data && (data.startsWith('assign_stage_') || data.startsWith('reassign_stage_'))) {
+        const parts = data.split('_') // e.g. assign_stage_<orderId>_<stage>
+        const orderId = parts[2]
+        const stage = parts.slice(3).join('_')
+        await (showTechnicianSelectionForStage as any)(client as any, chatId, telegramId, orderId, stage)
+      } else if (data && data.startsWith('select_tech_for_stage_')) {
+        const payload = data.replace('select_tech_for_stage_', '')
+        const segs = payload.split('_')
+        const oid = segs[0]
+        const stg = segs.slice(1, segs.length - 1).join('_')
+        const techId = segs[segs.length - 1]
+        await (assignTechnicianToStage as any)(client as any, chatId, telegramId, oid, stg, techId)
+      } else if (data && data.startsWith('assign_all_same_')) {
+        const orderId = data.replace('assign_all_same_', '')
+        await (showTechnicianSelectionForAllStages as any)(client as any, chatId, telegramId, orderId)
+      } else if (data && data.startsWith('assign_all_tech_')) {
+        const payload = data.replace('assign_all_tech_', '')
+        const [oid, techId] = payload.split('_')
+        await (assignTechnicianToAllStages as any)(client as any, chatId, telegramId, oid, techId)
+      } else if (data === 'back_to_assignment_list') {
+        await (showOrderSelectionForStageAssignment as any)(client as any, chatId, telegramId)
       }
       return NextResponse.json({ ok: true })
     }
@@ -419,11 +465,14 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-    } else if (
-      text === '🚀 Update SOD' ||
-      text === '🎯 Update E2E' ||
-      text === '👥 Assign Teknisi'
-    ) {
+    } else if (text === '👥 Assign Teknisi') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melakukan assignment.')
+      } else {
+        await (showOrderSelectionForStageAssignment as any)(client as any, chatId, telegramId)
+      }
+    } else if (text === '🚀 Update SOD' || text === '🎯 Update E2E') {
       await (client as any).sendMessage(chatId, 'ℹ️ Fitur ini sedang dimigrasikan. Akan segera tersedia.')
     } else {
       await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.', {
