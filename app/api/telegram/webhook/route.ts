@@ -260,8 +260,8 @@ export async function POST(req: NextRequest) {
             assignedAtIso = order.updated_at
           }
           await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
-          const role = await (getUserRole as any)(telegramId)
-          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
+
+
         }
       } else if (data && data.startsWith('detail_order_')) {
         const orderId = data.replace('detail_order_', '')
@@ -287,7 +287,8 @@ export async function POST(req: NextRequest) {
 
           await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
           const role = await (getUserRole as any)(telegramId)
-          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
+          const menuRole = role === 'HD' ? 'HD' : (role || 'Teknisi')
+          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(menuRole))
         }
       } else if (data && data.startsWith('refresh_order_')) {
         const orderId = data.replace('refresh_order_', '')
@@ -429,9 +430,10 @@ export async function POST(req: NextRequest) {
               assignedAtIso = order.updated_at
             }
             await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
-          }
           const role = await (getUserRole as any)(telegramId)
-          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(role || 'Teknisi'))
+          const menuRole = role === 'HD' ? 'HD' : (role || 'Teknisi')
+          await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(menuRole))
+          }
         }
         return NextResponse.json({ ok: true })
       }
