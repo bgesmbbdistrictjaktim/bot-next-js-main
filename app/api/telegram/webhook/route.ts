@@ -140,6 +140,86 @@ const processedUpdateIds = new Set<number>()
 // Guard to throttle progress messages per chat
 const progressSpamGuard = new Map<number, number>()
 
+// Session create order (inline flow)
+const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
+
+const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
+const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
+const SERVICE_OPTIONS = ['Astinet','Metro','Vpn Ip','Ip Transit','Siptrunk']
+
+function chunkKeyboard(items: string[], prefix: string, perRow = 3) {
+  const keyboard: any[] = []
+  for (let i = 0; i < items.length; i += perRow) {
+    const row: any[] = []
+    for (let j = i; j < Math.min(i + perRow, items.length); j++) {
+      row.push({ text: items[j], callback_data: `${prefix}${items[j]}` })
+    }
+    keyboard.push(row)
+  }
+  return keyboard
+}
+
+function getStoKeyboard() { return { inline_keyboard: chunkKeyboard(STO_OPTIONS, 'sto_') } }
+function getTransactionKeyboard() { return { inline_keyboard: chunkKeyboard(TRANSACTION_OPTIONS, 'transaction_') } }
+function getServiceKeyboard() { return { inline_keyboard: chunkKeyboard(SERVICE_OPTIONS, 'service_') } }
+
+function nowJakartaIso() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', 'T') + '.000Z'
+}
+
+async function handleCreateOrderTextInput(client: any, chatId: number, telegramId: string, text: string) {
+  const session = createOrderSessions.get(chatId)
+  if (!session || session.type !== 'create_order') return false
+  const t = (text || '').trim()
+  if (!t) return false
+
+  if (session.step === 'order_id') {
+    const { data: exist } = await supabaseAdmin.from('orders').select('order_id').eq('order_id', t).maybeSingle()
+    if (exist) {
+      await client.sendMessage(chatId, '❌ Order ID sudah ada.\n\n🆔 Silakan masukkan Order ID yang berbeda:')
+      return true
+    }
+    session.data.order_id = t
+    session.step = 'customer_name'
+    await client.sendMessage(chatId, `✅ Order ID: ${t}\n\n1️⃣ Nama Pelanggan:`)
+    return true
+  }
+  if (session.step === 'customer_name') {
+    session.data.customer_name = t
+    session.step = 'customer_address'
+    await client.sendMessage(chatId, `✅ Nama pelanggan: ${t}\n\n2️⃣ Alamat Pelanggan:`)
+    return true
+  }
+  if (session.step === 'customer_address') {
+    session.data.customer_address = t
+    session.step = 'customer_contact'
+    await client.sendMessage(chatId, `✅ Alamat pelanggan: ${t}\n\n3️⃣ Kontak Pelanggan:`)
+    return true
+  }
+  if (session.step === 'customer_contact') {
+    session.data.contact = t
+    session.step = 'sto'
+    await client.sendMessage(chatId, '✅ Kontak pelanggan: ' + t + '\n\n4️⃣ Pilih STO:', { reply_markup: getStoKeyboard() })
+    return true
+  }
+  return false
+}
+
+async function sendOrderCreatedSuccess(client: any, chatId: number, payload: any, techName: string) {
+  const message = '✅ Order Berhasil Dibuat!\n\n' +
+    `🆔 Order ID: ${payload.order_id}\n` +
+    `👤 Pelanggan: ${payload.customer_name}\n` +
+    `📍 Alamat: ${payload.customer_address}\n` +
+    `📞 Kontak: ${payload.contact}\n` +
+    `🏢 STO: ${payload.sto}\n` +
+    `📦 Type Transaksi: ${payload.transaction_type}\n` +
+    `🔧 Jenis Layanan: ${payload.service_type}\n` +
+    `👷 Teknisi: ${techName}\n` +
+    `📌 Status: Pending`
+  await client.sendMessage(chatId, message)
+}
+
+
 export async function POST(req: NextRequest) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
@@ -255,7 +335,9 @@ export async function POST(req: NextRequest) {
         if (role !== 'HD') {
           await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
         } else {
-          await (startCreateOrderFlow as any)(client as any, chatId, telegramId)
+          // Mulai flow create order inline berbasis sesi
+          createOrderSessions.set(chatId, { type: 'create_order', step: 'order_id', data: {} })
+          await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { parse_mode: 'HTML' })
         }
       } else if (data === 'my_orders') {
         const role = await (getUserRole as any)(telegramId)
@@ -477,6 +559,109 @@ export async function POST(req: NextRequest) {
         }
         keyboard.push([{ text: '🔙 Kembali ke Menu Utama', callback_data: 'back_to_main' }])
         await (client as any).sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } })
+      } else if (data && data.startsWith('sto_')) {
+        const sto = data.replace('sto_', '')
+        const session = createOrderSessions.get(chatId)
+        if (session && session.type === 'create_order') {
+          session.data.sto = sto
+          session.step = 'transaction'
+          await (client as any).sendMessage(chatId, `✅ STO: ${sto}\n\n5️⃣ Pilih Type Transaksi:`, { reply_markup: getTransactionKeyboard() })
+        }
+      } else if (data && data.startsWith('transaction_')) {
+        const trx = data.replace('transaction_', '')
+        const session = createOrderSessions.get(chatId)
+        if (session && session.type === 'create_order') {
+          session.data.transaction_type = trx
+          session.step = 'service'
+          await (client as any).sendMessage(chatId, `✅ Type Transaksi: ${trx}\n\n6️⃣ Pilih Jenis Layanan:`, { reply_markup: getServiceKeyboard() })
+        }
+      } else if (data && data.startsWith('service_')) {
+        const service = data.replace('service_', '')
+        const session = createOrderSessions.get(chatId)
+        if (session && session.type === 'create_order') {
+          session.data.service_type = service
+          session.step = 'assign_technician'
+          // Ambil teknisi berdasarkan STO (jika ada mapping), fallback semua teknisi
+          const { data: mappings } = await supabaseAdmin
+            .from('technician_sto')
+            .select('user_id')
+            .eq('sto', session.data.sto)
+          let technicians: any[] = []
+          if (mappings && mappings.length) {
+            const ids = mappings.map(m => m.user_id).filter(Boolean)
+            const { data: stoTechs } = await supabaseAdmin
+              .from('users')
+              .select('id, name')
+              .eq('role', 'Teknisi')
+              .in('id', ids)
+              .order('name')
+            technicians = stoTechs || []
+          }
+          if (!technicians || technicians.length === 0) {
+            const { data: allTechs } = await supabaseAdmin
+              .from('users')
+              .select('id, name')
+              .eq('role', 'Teknisi')
+              .order('name')
+            technicians = allTechs || []
+          }
+          if (!technicians || technicians.length === 0) {
+            await (client as any).sendMessage(chatId, 'ℹ️ Belum ada teknisi terdaftar.')
+          } else {
+            const keyboard: any[] = technicians.map(t => [{ text: `👷 ${t.name}`, callback_data: `assign_tech_${t.id}` }])
+            await (client as any).sendMessage(chatId, '🧑‍🔧 Pilih Teknisi yang akan ditugaskan:', { reply_markup: { inline_keyboard: keyboard } })
+          }
+        }
+      } else if (data && data.startsWith('assign_tech_')) {
+        const techId = data.replace('assign_tech_', '')
+        const session = createOrderSessions.get(chatId)
+        if (session && session.type === 'create_order') {
+          // Dapatkan user HD untuk created_by
+          const { data: creator } = await supabaseAdmin
+            .from('users').select('id, name').eq('telegram_id', String(telegramId)).maybeSingle()
+          const createdById = creator?.id
+          if (!createdById) {
+            await (client as any).sendMessage(chatId, '❌ Anda belum terdaftar sebagai user.')
+          } else {
+            const payload: any = {
+              order_id: session.data.order_id,
+              customer_name: session.data.customer_name,
+              customer_address: session.data.customer_address,
+              contact: session.data.contact,
+              sto: session.data.sto,
+              transaction_type: session.data.transaction_type,
+              service_type: session.data.service_type,
+              created_by: createdById,
+              assigned_technician: techId,
+              status: 'Pending',
+              technician_assigned_at: nowJakartaIso(),
+            }
+            const { data: inserted, error: insertError } = await supabaseAdmin
+              .from('orders')
+              .insert(payload)
+              .select('*')
+              .maybeSingle()
+            if (insertError || !inserted) {
+              await (client as any).sendMessage(chatId, '❌ Gagal membuat order. Coba lagi.')
+            } else {
+              // Ambil nama teknisi dan telegram id untuk notifikasi
+              const { data: tech } = await supabaseAdmin
+                .from('users').select('name, telegram_id').eq('id', techId).maybeSingle()
+              const techName = tech?.name || '-' 
+              await sendOrderCreatedSuccess(client as any, chatId, payload, techName)
+              // Notifikasi teknisi
+              if (tech?.telegram_id) {
+                const notif = '📢 Order baru ditugaskan kepada Anda\n\n' +
+                  `🆔 ${payload.order_id} - ${payload.customer_name}\n` +
+                  `📍 ${payload.customer_address}\n` +
+                  `🏢 STO: ${payload.sto}\n` +
+                  `📦 ${payload.transaction_type} | ${payload.service_type}`
+                await (client as any).sendMessage(Number(tech.telegram_id), notif)
+              }
+              createOrderSessions.delete(chatId)
+            }
+          }
+        }
       } else if (data === 'back_to_main') {
         await handleStart(client as any, chatId, telegramId)
       }
@@ -581,6 +766,12 @@ export async function POST(req: NextRequest) {
       } else {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
       }
+    } else if (createOrderSessions.has(chatId) && typeof text === 'string') {
+      // Tangani input teks bertahap untuk create order inline
+      const _handled = await handleCreateOrderTextInput(client as any, chatId, telegramId, text)
+      if (_handled) {
+        return NextResponse.json({ ok: true })
+      }
     // Reply keyboard texts (non-slash)
     } else if (text === '📋 Order Saya') {
       const role = await (getUserRole as any)(telegramId)
@@ -608,7 +799,8 @@ export async function POST(req: NextRequest) {
     } else if (text === '📋 Buat Order') {
       const role = await (getUserRole as any)(telegramId)
       if (role === 'HD') {
-        await (startCreateOrderFlow as any)(client as any, chatId, telegramId)
+        createOrderSessions.set(chatId, { type: 'create_order', step: 'order_id', data: {} })
+        await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { parse_mode: 'HTML' })
       } else {
         await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
       }
