@@ -239,18 +239,22 @@ export async function POST(req: NextRequest) {
         if (!order) {
           await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
         } else {
-          const summary = formatOrderSummary(order)
-          await (client as any).sendMessage(chatId, `${summary}\n\nPilih aksi:`, {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '🔄 Refresh', callback_data: `refresh_order_${order.order_id}` },
-                  { text: '📄 Detail', callback_data: `detail_order_${order.order_id}` }
-                ],
-                [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
-              ]
-            }
-          })
+          const { data: evidence } = await supabaseAdmin.from('evidence').select('*').eq('order_id', orderId).maybeSingle()
+          let createdByName: string | undefined
+          if (order.created_by) {
+            const { data: creator } = await supabaseAdmin.from('users').select('name').eq('id', order.created_by).maybeSingle()
+            createdByName = creator?.name
+          }
+          let assignedTechName: string | undefined
+          let assignedTechRole: string | undefined
+          let assignedAtIso: string | undefined
+          if (order.assigned_technician) {
+            const { data: tech } = await supabaseAdmin.from('users').select('name, role').eq('id', order.assigned_technician).maybeSingle()
+            assignedTechName = tech?.name
+            assignedTechRole = tech?.role || 'Teknisi'
+            assignedAtIso = order.updated_at
+          }
+          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
         }
       } else if (data && data.startsWith('detail_order_')) {
         const orderId = data.replace('detail_order_', '')
@@ -259,7 +263,6 @@ export async function POST(req: NextRequest) {
         if (!order) {
           await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
         } else {
-          // Ambil nama pembuat dan teknisi jika ada
           let createdByName: string | undefined
           if (order.created_by) {
             const { data: creator } = await supabaseAdmin.from('users').select('name').eq('id', order.created_by).maybeSingle()
@@ -275,14 +278,7 @@ export async function POST(req: NextRequest) {
             assignedAtIso = order.updated_at
           }
 
-          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`, {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔄 Refresh', callback_data: `refresh_order_${orderId}` }],
-                [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
-              ]
-            }
-          })
+          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
         }
       } else if (data && data.startsWith('refresh_order_')) {
         const orderId = data.replace('refresh_order_', '')
@@ -408,18 +404,22 @@ export async function POST(req: NextRequest) {
           await (client as any).sendMessage(chatId, '❌ Tidak ada order yang cocok.')
         } else {
           for (const order of results) {
-            const summary = formatOrderSummary(order)
-            await (client as any).sendMessage(chatId, `${summary}`, {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: '🔄 Refresh', callback_data: `refresh_order_${order.order_id}` },
-                    { text: '📄 Detail', callback_data: `detail_order_${order.order_id}` },
-                  ],
-                  [{ text: '⬅️ Kembali', callback_data: 'back_to_hd_menu' }]
-                ]
-              }
-            })
+            const { data: evidence } = await supabaseAdmin.from('evidence').select('*').eq('order_id', order.order_id).maybeSingle()
+            let createdByName: string | undefined
+            if (order.created_by) {
+              const { data: creator } = await supabaseAdmin.from('users').select('name').eq('id', order.created_by).maybeSingle()
+              createdByName = creator?.name
+            }
+            let assignedTechName: string | undefined
+            let assignedTechRole: string | undefined
+            let assignedAtIso: string | undefined
+            if (order.assigned_technician) {
+              const { data: tech } = await supabaseAdmin.from('users').select('name, role').eq('id', order.assigned_technician).maybeSingle()
+              assignedTechName = tech?.name
+              assignedTechRole = tech?.role || 'Teknisi'
+              assignedAtIso = order.updated_at
+            }
+            await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
           }
         }
         return NextResponse.json({ ok: true })
