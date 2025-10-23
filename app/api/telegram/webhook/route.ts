@@ -64,22 +64,72 @@ function formatOrderSummary(order: any) {
   ]
   return lines.join('\n')
 }
-//INI FORMAT MENU HANDLER CEK ORDER
-function formatOrderDetail(order: any, evidence?: any) {
+
+function formatWIB(dateIso?: string) {
+  if (!dateIso) return 'Belum diset'
+  try {
+    const d = new Date(dateIso)
+    const parts = new Intl.DateTimeFormat('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).formatToParts(d)
+    const get = (t: string) => parts.find(p => p.type === t)?.value || ''
+    const day = get('day')
+    const month = get('month')
+    const year = get('year')
+    const hour = get('hour')
+    const minute = get('minute')
+    const second = get('second')
+    return `${day} ${month} ${year} ${hour}:${minute}:${second} WIB`
+  } catch {
+    return dateIso || '-'
+  }
+}
+
+// Formatter detail sesuai format "Cek Order"
+function formatOrderDetail(order: any, evidence?: any, createdByName?: string, assignedTechName?: string, assignedAtIso?: string, assignedTechRole?: string) {
   const lines: string[] = []
-  lines.push('📄 Detail Order')
+  lines.push('📋 DETAIL LENGKAP ORDER')
   lines.push('')
-  lines.push(formatOrderSummary(order))
+  lines.push(`🆔 Order ID: ${order.order_id || order.id}`)
+  lines.push(`⏳ Status: ${order.status || '-'}`)
+  lines.push(`📅 Dibuat: ${formatWIB(order.created_at)}`)
+  lines.push(`👤 Dibuat oleh: ${createdByName || '-'}`)
+  lines.push(`📝 Terakhir Update: ${formatWIB(order.updated_at)}`)
   lines.push('')
-  lines.push(`🚀 SOD: ${order.sod_time || '-'}`)
-  lines.push(`🎯 E2E: ${order.e2e_time || '-'}`)
-  lines.push(`👷 Teknisi: ${order.assigned_technician || '-'}`)
+  lines.push('👤 INFORMASI CUSTOMER')
+  lines.push(`• Nama: ${order.customer_name || '-'}`)
+  lines.push(`• Alamat: ${order.customer_address || '-'}`)
+  lines.push(`• Kontak: ${order.contact || '-'}`)
+  lines.push(`• STO: ${order.sto || '-'}`)
   lines.push('')
+  lines.push('🔧 INFORMASI LAYANAN')
+  lines.push(`• Jenis Transaksi: ${order.transaction_type || '-'}`)
+  lines.push(`• Jenis Layanan: ${order.service_type || '-'}`)
+  lines.push('')
+  lines.push('👨‍🔧 TEKNISI ASSIGNED')
+  if (assignedTechName) {
+    lines.push(`• Nama: ${assignedTechName}`)
+    lines.push(`• Role: ${assignedTechRole || 'Teknisi'}`)
+    lines.push(`• Assigned pada: ${formatWIB(assignedAtIso || order.updated_at)}`)
+  } else {
+    lines.push('• Belum di-assign')
+  }
+  lines.push('')
+  lines.push('⏰ TIMELINE PEKERJAAN')
+  lines.push(`• SOD Time: ${order.sod_time ? formatWIB(order.sod_time) : 'Belum diset'}`)
+  lines.push(`• E2E Time: ${order.e2e_time ? formatWIB(order.e2e_time) : 'Belum diset'}`)
+  lines.push(`• LME PT2 Start: ${order.lme_pt2_start ? formatWIB(order.lme_pt2_start) : 'Belum diset'}`)
+  lines.push(`• LME PT2 End: ${order.lme_pt2_end ? formatWIB(order.lme_pt2_end) : 'Belum diset'}`)
+
+  // Tambahan ringkas evidence jika ingin ditampilkan (opsional)
   if (evidence) {
     const count = ['photo_sn_ont','photo_technician_customer','photo_customer_house','photo_odp_front','photo_odp_inside','photo_label_dc','photo_test_result'].filter(k => evidence[k]).length
-    lines.push(`📸 Evidence: ${count}/7 foto`)
-    lines.push(`• ODP: ${evidence.odp_name || '-'}`)
-    lines.push(`• SN ONT: ${evidence.ont_sn || '-'}`)
+    if (count > 0) {
+      lines.push('')
+      lines.push(`📸 Evidence: ${count}/7 foto`)
+    }
   }
   return lines.join('\n')
 }
@@ -145,41 +195,20 @@ export async function POST(req: NextRequest) {
         .from('evidence-photos')
         .upload(filename, buffer, { contentType: 'image/jpeg', upsert: true })
       if (uploadError) {
-        await (client as any).sendMessage(chatId, `❌ Gagal upload ${nextField.label}. Coba lagi.`)
+        await (client as any).sendMessage(chatId, '❌ Gagal mengupload foto evidence.')
         return NextResponse.json({ ok: true })
       }
-      const { data: urlData } = supabaseAdmin.storage
-        .from('evidence-photos')
-        .getPublicUrl(upload.path)
 
+      // Save URL to evidence table
+      const { data: publicUrlData } = supabaseAdmin.storage.from('evidence-photos').getPublicUrl(filename)
+      const updatePayload: any = {}
+      updatePayload[nextField.field] = publicUrlData.publicUrl
       await supabaseAdmin
         .from('evidence')
-        .update({ [nextField.field]: urlData.publicUrl, uploaded_at: new Date().toISOString() })
-        .eq('order_id', orderId)
+        .upsert({ order_id: orderId, ...updatePayload }, { onConflict: 'order_id' })
 
-      // Count uploaded
-      const { data: updatedEvidence } = await supabaseAdmin
-        .from('evidence')
-        .select('*')
-        .eq('order_id', orderId)
-        .maybeSingle()
-      let uploadedCount = 0
-      for (const t of PHOTO_TYPES) if (updatedEvidence && updatedEvidence[t.field]) uploadedCount++
-
-      await (client as any).sendMessage(chatId, `✅ ${nextField.label} Berhasil Disimpan!\n\n📊 Progress: ${uploadedCount}/7 foto\n\n${uploadedCount < 7 ? `Silakan upload foto ke-${uploadedCount + 1}: ${PHOTO_TYPES[uploadedCount].label}` : '🎉 Semua evidence berhasil disimpan!'}`)
-
-      if (uploadedCount >= 7) {
-        const { error: closeError } = await supabaseAdmin
-          .from('orders')
-          .update({ status: 'Closed' })
-          .eq('order_id', orderId)
-        if (closeError) {
-          await (client as any).sendMessage(chatId, '⚠️ Order ditutup tetapi gagal update status.')
-        } else {
-          await (client as any).sendMessage(chatId, '🎉 Order berhasil diselesaikan dan status diupdate ke "Closed"!')
-        }
-      }
-
+      await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+      await (client as any).sendMessage(chatId, `👆 Balas pesan instruksi evidence dengan foto berikutnya.`)
       return NextResponse.json({ ok: true })
     }
 
@@ -230,7 +259,23 @@ export async function POST(req: NextRequest) {
         if (!order) {
           await (client as any).sendMessage(chatId, `❌ Order ${orderId} tidak ditemukan.`)
         } else {
-          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence)}`, {
+          // Ambil nama pembuat dan teknisi jika ada
+          let createdByName: string | undefined
+          if (order.created_by) {
+            const { data: creator } = await supabaseAdmin.from('users').select('name').eq('id', order.created_by).maybeSingle()
+            createdByName = creator?.name
+          }
+          let assignedTechName: string | undefined
+          let assignedTechRole: string | undefined
+          let assignedAtIso: string | undefined
+          if (order.assigned_technician) {
+            const { data: tech } = await supabaseAdmin.from('users').select('name, role').eq('id', order.assigned_technician).maybeSingle()
+            assignedTechName = tech?.name
+            assignedTechRole = tech?.role || 'Teknisi'
+            assignedAtIso = order.updated_at
+          }
+
+          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`, {
             reply_markup: {
               inline_keyboard: [
                 [{ text: '🔄 Refresh', callback_data: `refresh_order_${orderId}` }],
