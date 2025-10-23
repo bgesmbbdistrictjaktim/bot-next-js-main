@@ -1,0 +1,55 @@
+{
+  "name": "telegram-order-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "bot": "node scripts/bot.js",
+    "create:tables": "node scripts/create-tables.js",
+    "check:supabase": "node scripts/check-supabase-info.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop telegram-bot",
+    "pm2:restart": "pm2 restart telegram-bot",
+    "pm2:status": "pm2 status",
+    "pm2:logs": "pm2 logs telegram-bot",
+    "pm2:monit": "pm2 monit",
+    "pm2:setup": "pm2 startup && pm2 save",
+    "vercel:deploy": "vercel --prod",
+    "vercel:dev": "vercel dev",
+    "deploy": "powershell -ExecutionPolicy Bypass -File deploy-vercel.ps1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.5",
+    "axios": "^1.6.2",
+    "cron": "^3.1.6",
+    "dotenv": "^16.3.1",
+    "moment": "^2.29.4",
+    "multer": "^1.4.5-lts.1",
+    "next": "14.0.4",
+    "node-telegram-bot-api": "^0.66.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20",
+    "@types/node-telegram-bot-api": "^0.64.5",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/uuid": "^9.0.7",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.4",
+    "typescript": "^5"
+  },
+  "description": "Bot Telegram untuk manajemen order instalasi/aktivasi layanan dengan role-based access (Helpdesk dan Teknisi).",
+  "main": "ecosystem.config.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "author": "",
+  "license": "ISC"
+}
