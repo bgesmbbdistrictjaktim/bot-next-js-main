@@ -865,12 +865,7 @@ export async function POST(req: NextRequest) {
         await (showMyOrders as any)(client as any, chatId, telegramId, role)
       }
     } else if (text === '📝 Update Progress') {
-      const role = await (getUserRole as any)(telegramId)
-      if (role !== 'Teknisi') {
-        await (client as any).sendMessage(chatId, '❌ Hanya Teknisi yang dapat update progress.')
-      } else {
-        await (showProgressMenu as any)(client as any, chatId, telegramId)
-      }
+      await (showProgressMenu as any)(client as any, chatId, telegramId)
     } else if (text === '📸 Upload Evidence') {
       const role = await (getUserRole as any)(telegramId)
       if (role !== 'Teknisi') {
