@@ -326,6 +326,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
+    // 0.5) Handle plain text input for inline Create Order session (order_id, customer data)
+    if (update?.message?.text) {
+      const session = createOrderSessions.get(chatId)
+      if (session && session.type === 'create_order') {
+        const handled = await handleCreateOrderTextInput(client as any, chatId, telegramId, update.message.text)
+        if (handled) {
+          return NextResponse.json({ ok: true })
+        }
+      }
+    }
+
     // 1) route callback_query
     if (update?.callback_query) {
       const data: string = update.callback_query.data
