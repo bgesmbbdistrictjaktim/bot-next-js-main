@@ -1362,7 +1362,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   // Ambil progress dengan status Not Ready
   const { data: progresses, error: progErr } = await supabaseAdmin
     .from('progress_new')
-    .select('order_id, uuid, survey_jaringan')
+    .select('order_id, survey_jaringan')
     .ilike('survey_jaringan->>status', 'Not Ready%')
 
   if (progErr) {
@@ -1371,9 +1371,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   const orderIds = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
-  const orderUuids = Array.isArray(progresses) ? progresses.map((p: any) => p.uuid).filter(Boolean) : []
-
-  if (orderIds.length === 0 && orderUuids.length === 0) {
+  if (orderIds.length === 0) {
     await client.sendMessage(chatId,
       'Tidak ada order yang perlu update LME PT2.\n\n' +
       '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
@@ -1382,36 +1380,26 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   // Ambil detail order yang belum memiliki LME PT2 end
-  const fields = 'id, order_id, customer_name, sto, created_at, lme_pt2_end'
-  const ordersByStringRes = orderIds.length > 0
-    ? await supabaseAdmin.from('orders').select(fields).in('order_id', orderIds).is('lme_pt2_end', null)
-    : { data: [] as any[], error: null }
-  const ordersByUuidRes = orderUuids.length > 0
-    ? await supabaseAdmin.from('orders').select(fields).in('id', orderUuids).is('lme_pt2_end', null)
-    : { data: [] as any[], error: null }
+  const { data: orders, error: orderErr } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, created_at, lme_pt2_end')
+    .in('order_id', orderIds)
+    .is('lme_pt2_end', null)
+    .order('created_at', { ascending: true })
 
-  if (ordersByStringRes.error || ordersByUuidRes.error) {
-    const msg = ordersByStringRes.error?.message || ordersByUuidRes.error?.message || 'Unknown error'
-    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order: ${msg}`)
+  if (orderErr) {
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order: ${orderErr.message}`)
     return
   }
 
-  const mergedOrders = [ ...(ordersByStringRes.data || []), ...(ordersByUuidRes.data || []) ]
-  const orderMap = new Map<string, any>()
-  for (const o of mergedOrders) { if (o) orderMap.set(o.order_id, o) }
+  const progressByOrder = new Map<string, any>()
+  for (const p of (progresses || [])) progressByOrder.set(p.order_id, p.survey_jaringan)
 
-  const progressByOrderId = new Map<string, any>()
-  const progressByOrderUuid = new Map<string, any>()
-  for (const p of (progresses || [])) {
-    if (p.order_id) progressByOrderId.set(p.order_id, p.survey_jaringan)
-    if (p.uuid) progressByOrderUuid.set(p.uuid, p.survey_jaringan)
-  }
-
-  const items = Array.from(orderMap.values()).map((o: any) => ({
+  const items = (orders || []).map((o: any) => ({
     order_id: o.order_id,
     customer_name: o.customer_name,
     sto: o.sto,
-    survey: progressByOrderId.get(o.order_id) || progressByOrderUuid.get(o.id)
+    survey: progressByOrder.get(o.order_id)
   }))
 
   if (!items || items.length === 0) {
