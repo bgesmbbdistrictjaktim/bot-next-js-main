@@ -1370,7 +1370,8 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
     return
   }
 
-  const orderIds = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
+  const orderIdsRaw = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
+  const orderIds = Array.from(new Set(orderIdsRaw.map((id: any) => String(id).trim())))
   if (orderIds.length === 0) {
     await client.sendMessage(chatId,
       'Tidak ada order yang perlu update LME PT2.\n\n' +
