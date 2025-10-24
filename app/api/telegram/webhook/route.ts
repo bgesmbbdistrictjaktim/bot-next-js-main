@@ -1255,7 +1255,6 @@ async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: str
       reply_markup: {
         inline_keyboard: [
           [{ text: '🔍 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
-          [{ text: '📊 Lihat LME PT2 History', callback_data: 'view_lme_pt2_history' }],
           [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
         ]
       }
@@ -1360,22 +1359,50 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
 
 // Seleksi order untuk LME PT2 berdasarkan progress_new survey_jaringan Not Ready
 async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId: string) {
-  const { data: orders } = await supabaseAdmin
+  // Ambil progress dengan status Not Ready
+  const { data: progresses, error: progErr } = await supabaseAdmin
+    .from('progress_new')
+    .select('order_id, survey_jaringan')
+    .filter('survey_jaringan->>status', 'eq', 'Not Ready')
+
+  if (progErr) {
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data progress: ${progErr.message}`)
+    return
+  }
+
+  const orderIds = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
+  if (orderIds.length === 0) {
+    await client.sendMessage(chatId,
+      'Tidak ada order yang perlu update LME PT2.\n\n' +
+      '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
+    )
+    return
+  }
+
+  // Ambil detail order yang belum memiliki LME PT2 end
+  const { data: orders, error: orderErr } = await supabaseAdmin
     .from('orders')
-    .select('order_id, customer_name, sto, created_at, progress_new:progress_new(survey_jaringan)')
+    .select('order_id, customer_name, sto, created_at, lme_pt2_end')
+    .in('order_id', orderIds)
     .is('lme_pt2_end', null)
     .order('created_at', { ascending: true })
 
-  const items = (orders || [])
-    .filter((o: any) => ((o.progress_new?.survey_jaringan?.status || '') as string).startsWith('Not Ready'))
-    .map((o: any) => ({
-      order_id: o.order_id,
-      customer_name: o.customer_name,
-      sto: o.sto,
-      survey: o.progress_new?.survey_jaringan
-    }))
+  if (orderErr) {
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order: ${orderErr.message}`)
+    return
+  }
 
-  if (items.length === 0) {
+  const progressByOrder = new Map<string, any>()
+  for (const p of (progresses || [])) progressByOrder.set(p.order_id, p.survey_jaringan)
+
+  const items = (orders || []).map((o: any) => ({
+    order_id: o.order_id,
+    customer_name: o.customer_name,
+    sto: o.sto,
+    survey: progressByOrder.get(o.order_id)
+  }))
+
+  if (!items || items.length === 0) {
     await client.sendMessage(chatId,
       'Tidak ada order yang perlu update LME PT2.\n\n' +
       '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
@@ -1384,21 +1411,18 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   let message = '📝 PILIH ORDER UNTUK UPDATE LME PT2\n\n'
-  message += '📋 Order yang perlu update LME PT2 (survey jaringan: Not Ready):\n'
-  message += '⏰ = Menunggu update dari HD\n\n'
+  message += '📋 Order yang perlu update LME PT2 (survey jaringan: Not Ready):\n\n'
 
   const keyboard: any[] = []
 
   items.forEach((i: any) => {
     const orderInfo = `${i.order_id} - ${i.customer_name} (${i.sto})`
-    const statusString = i.survey?.status || ''
-    const timestampMatch = statusString.match(/Not Ready - (.+)/)
-    const surveyTimestamp = timestampMatch ? timestampMatch[1] : 'Tidak ada'
-    const surveyNote = i.survey?.note || 'Tidak ada catatan'
+    const surveyTime = i.survey?.timestamp ? formatIndonesianDateTime(i.survey.timestamp) : '-'
+    const surveyTech = i.survey?.technician || '-'
 
     message += `⏰ ${orderInfo}\n`
-    message += `   📅 Survey Jaringan: ${surveyTimestamp}\n`
-    message += `   📝 Catatan: ${surveyNote}\n\n`
+    message += `   📅 Waktu: ${surveyTime}\n`
+    message += `   👷 Teknisi: ${surveyTech}\n\n`
 
     keyboard.push([{ text: `📝 Update LME PT2 - ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }])
   })
