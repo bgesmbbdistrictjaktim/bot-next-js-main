@@ -852,12 +852,6 @@ export async function POST(req: NextRequest) {
       } else {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
       }
-    } else if (createOrderSessions.has(chatId) && typeof text === 'string') {
-      // Tangani input teks bertahap untuk create order inline
-      const _handled = await handleCreateOrderTextInput(client as any, chatId, telegramId, text)
-      if (_handled) {
-        return NextResponse.json({ ok: true })
-      }
     // Reply keyboard texts (non-slash)
     } else if (text === '📋 Order Saya') {
       const role = await (getUserRole as any)(telegramId)
