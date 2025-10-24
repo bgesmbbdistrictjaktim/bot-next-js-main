@@ -1362,8 +1362,8 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   // Ambil progress dengan status Not Ready
   const { data: progresses, error: progErr } = await supabaseAdmin
     .from('progress_new')
-    .select('order_id, survey_jaringan')
-    .filter('survey_jaringan->>status', 'eq', 'Not Ready')
+    .select('order_id, uuid, survey_jaringan')
+    .ilike('survey_jaringan->>status', 'Not Ready%')
 
   if (progErr) {
     await (client as any).sendMessage(chatId, `❌ Gagal mengambil data progress: ${progErr.message}`)
@@ -1371,7 +1371,9 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   const orderIds = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
-  if (orderIds.length === 0) {
+  const orderUuids = Array.isArray(progresses) ? progresses.map((p: any) => p.uuid).filter(Boolean) : []
+
+  if (orderIds.length === 0 && orderUuids.length === 0) {
     await client.sendMessage(chatId,
       'Tidak ada order yang perlu update LME PT2.\n\n' +
       '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
@@ -1380,26 +1382,36 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   // Ambil detail order yang belum memiliki LME PT2 end
-  const { data: orders, error: orderErr } = await supabaseAdmin
-    .from('orders')
-    .select('order_id, customer_name, sto, created_at, lme_pt2_end')
-    .in('order_id', orderIds)
-    .is('lme_pt2_end', null)
-    .order('created_at', { ascending: true })
+  const fields = 'id, order_id, customer_name, sto, created_at, lme_pt2_end'
+  const ordersByStringRes = orderIds.length > 0
+    ? await supabaseAdmin.from('orders').select(fields).in('order_id', orderIds).is('lme_pt2_end', null)
+    : { data: [] as any[], error: null }
+  const ordersByUuidRes = orderUuids.length > 0
+    ? await supabaseAdmin.from('orders').select(fields).in('id', orderUuids).is('lme_pt2_end', null)
+    : { data: [] as any[], error: null }
 
-  if (orderErr) {
-    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order: ${orderErr.message}`)
+  if (ordersByStringRes.error || ordersByUuidRes.error) {
+    const msg = ordersByStringRes.error?.message || ordersByUuidRes.error?.message || 'Unknown error'
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order: ${msg}`)
     return
   }
 
-  const progressByOrder = new Map<string, any>()
-  for (const p of (progresses || [])) progressByOrder.set(p.order_id, p.survey_jaringan)
+  const mergedOrders = [ ...(ordersByStringRes.data || []), ...(ordersByUuidRes.data || []) ]
+  const orderMap = new Map<string, any>()
+  for (const o of mergedOrders) { if (o) orderMap.set(o.order_id, o) }
 
-  const items = (orders || []).map((o: any) => ({
+  const progressByOrderId = new Map<string, any>()
+  const progressByOrderUuid = new Map<string, any>()
+  for (const p of (progresses || [])) {
+    if (p.order_id) progressByOrderId.set(p.order_id, p.survey_jaringan)
+    if (p.uuid) progressByOrderUuid.set(p.uuid, p.survey_jaringan)
+  }
+
+  const items = Array.from(orderMap.values()).map((o: any) => ({
     order_id: o.order_id,
     customer_name: o.customer_name,
     sto: o.sto,
-    survey: progressByOrder.get(o.order_id)
+    survey: progressByOrderId.get(o.order_id) || progressByOrderUuid.get(o.id)
   }))
 
   if (!items || items.length === 0) {
@@ -1417,8 +1429,15 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
 
   items.forEach((i: any) => {
     const orderInfo = `${i.order_id} - ${i.customer_name} (${i.sto})`
-    const surveyTime = i.survey?.timestamp ? formatIndonesianDateTime(i.survey.timestamp) : '-'
-    const surveyTech = i.survey?.technician || '-'
+    let surveyTime = i.survey?.timestamp ? formatIndonesianDateTime(i.survey.timestamp) : '-'
+    let surveyTech = i.survey?.technician || '-'
+
+    // Fallback parsing format lama: "Not Ready - dd/mm/yyyy, HH.MM.SS - nama"
+    if (!i.survey?.timestamp && typeof i.survey?.status === 'string' && i.survey.status.startsWith('Not Ready')) {
+      const parts = String(i.survey.status).split(' - ')
+      if (parts.length >= 2) surveyTime = parts[1]
+      if (parts.length >= 3) surveyTech = parts[2]
+    }
 
     message += `⏰ ${orderInfo}\n`
     message += `   📅 Waktu: ${surveyTime}\n`
