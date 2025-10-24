@@ -318,9 +318,16 @@ export async function POST(req: NextRequest) {
       const { data: publicUrlData } = supabaseAdmin.storage.from('evidence-photos').getPublicUrl(filename)
       const updatePayload: any = {}
       updatePayload[nextField.field] = publicUrlData.publicUrl
-      await supabaseAdmin
+      const { data: evPhoto } = await supabaseAdmin
         .from('evidence')
-        .upsert({ order_id: orderId, ...updatePayload }, { onConflict: 'order_id' })
+        .select('order_id')
+        .eq('order_id', orderId)
+        .maybeSingle()
+      if (evPhoto) {
+        await supabaseAdmin.from('evidence').update(updatePayload).eq('order_id', orderId)
+      } else {
+        await supabaseAdmin.from('evidence').insert({ order_id: orderId, ...updatePayload })
+      }
 
       await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
       await (client as any).sendMessage(chatId, `👆 Balas pesan instruksi evidence dengan foto berikutnya.`)
@@ -825,9 +832,16 @@ export async function POST(req: NextRequest) {
       if (odpMatch) {
         const orderId = odpMatch[1]
         // Insert or update evidence with ODP
-        await supabaseAdmin
+        const { data: evODP } = await supabaseAdmin
           .from('evidence')
-          .upsert({ order_id: orderId, odp_name: text }, { onConflict: 'order_id' })
+          .select('order_id')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        if (evODP) {
+          await supabaseAdmin.from('evidence').update({ odp_name: text }).eq('order_id', orderId)
+        } else {
+          await supabaseAdmin.from('evidence').insert({ order_id: orderId, odp_name: text })
+        }
         await (client as any).sendMessage(chatId, `Masukkan SN ONT untuk ORDER ${orderId}:`, {
           reply_markup: { force_reply: true }
         })
@@ -837,9 +851,16 @@ export async function POST(req: NextRequest) {
       const snMatch = replyText.match(/Masukkan SN ONT untuk ORDER\s+(\S+)/)
       if (snMatch) {
         const orderId = snMatch[1]
-        await supabaseAdmin
+        const { data: evSN } = await supabaseAdmin
           .from('evidence')
-          .upsert({ order_id: orderId, ont_sn: text }, { onConflict: 'order_id' })
+          .select('order_id')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        if (evSN) {
+          await supabaseAdmin.from('evidence').update({ ont_sn: text }).eq('order_id', orderId)
+        } else {
+          await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text })
+        }
         await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
         return NextResponse.json({ ok: true })
       }
