@@ -422,6 +422,88 @@ export async function POST(req: NextRequest) {
         }
       } else if (data === 'back_to_hd_menu') {
         await handleStart(client as any, chatId, telegramId)
+      } else if (data === 'back_to_menu') {
+        await handleStart(client as any, chatId, telegramId)
+      } else if (data === 'sod_menu') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showSODUpdateMenu(client as any, chatId, telegramId)
+        }
+      } else if (data === 'select_order_for_sod') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showSODOrderSelection(client as any, chatId, telegramId)
+        }
+      } else if (data === 'view_sod_history') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showSODHistory(client as any, chatId, telegramId)
+        }
+      } else if (data && data.startsWith('sod_order_')) {
+        const orderId = data.replace('sod_order_', '')
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melakukan update.')
+        } else {
+          await handleSODUpdate(client as any, chatId, telegramId, orderId)
+        }
+      } else if (data === 'select_order_for_lme_pt2') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showLMEPT2OrderSelection(client as any, chatId, telegramId)
+        }
+      } else if (data === 'view_lme_pt2_history') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showLMEPT2History(client as any, chatId, telegramId)
+        }
+      } else if (data && data.startsWith('lme_pt2_order_')) {
+        const orderId = data.replace('lme_pt2_order_', '')
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melakukan update.')
+        } else {
+          await handleLMEPT2Update(client as any, chatId, telegramId, orderId)
+        }
+      } else if (data === 'e2e_menu') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showE2EUpdateMenu(client as any, chatId, telegramId)
+        }
+      } else if (data === 'select_order_for_e2e') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showE2EOrderSelection(client as any, chatId, telegramId)
+        }
+      } else if (data === 'view_e2e_history') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showE2EHistory(client as any, chatId, telegramId)
+        }
+      } else if (data && data.startsWith('e2e_order_')) {
+        const orderId = data.replace('e2e_order_', '')
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat melakukan update.')
+        } else {
+          await handleE2EUpdate(client as any, chatId, telegramId, orderId)
+        }
       } else if (data && data.startsWith('evidence_order_')) {
         const orderId = data.split('_')[2]
         // Fetch order basic info
@@ -927,8 +1009,27 @@ export async function POST(req: NextRequest) {
       } else {
         await (showOrderSelectionForStageAssignment as any)(client as any, chatId, telegramId)
       }
-    } else if (text === '🚀 Update SOD' || text === '🎯 Update E2E') {
-      await (client as any).sendMessage(chatId, 'ℹ️ Fitur ini sedang dimigrasikan. Akan segera tersedia.')
+    } else if (text === '🚀 Update SOD') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+      } else {
+        await showSODUpdateMenu(client as any, chatId, telegramId)
+      }
+    } else if (text === '🎯 Update E2E') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+      } else {
+        await showE2EUpdateMenu(client as any, chatId, telegramId)
+      }
+    } else if (text === '📝 Update LME PT2') {
+      const role = await (getUserRole as any)(telegramId)
+      if (role !== 'HD') {
+        await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+      } else {
+        await showLMEPT2UpdateMenu(client as any, chatId, telegramId)
+      }
     } else {
       await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.', {
         parse_mode: 'HTML',
@@ -939,5 +1040,413 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     const message = error?.response?.data || error?.message || 'Unknown error'
     return NextResponse.json({ error: 'Webhook handler failed', details: message }, { status: 500 })
+  }
+}
+
+// Helper untuk format tanggal WIB ringkas (digunakan untuk SOD/E2E/LME PT2)
+function formatIndonesianDateTime(dateIso?: string | null) {
+  if (!dateIso) return '-';
+  const d = new Date(dateIso);
+  try {
+    return d.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  } catch {
+    return d.toISOString();
+  }
+}
+
+function formatReadableDuration(hours: number) {
+  if (!isFinite(hours) || hours < 0) return '-';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return `${h} jam ${m} menit`;
+}
+
+async function getUserName(telegramId: string) {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('name')
+    .eq('telegram_id', String(telegramId))
+    .maybeSingle();
+  return data?.name || 'HD';
+}
+
+// Menu: Update SOD
+async function showSODUpdateMenu(client: any, chatId: number, telegramId: string) {
+  await client.sendMessage(chatId, '���0 Update SOD\n\nPilih aksi:', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📝 Pilih Order untuk Update SOD', callback_data: 'select_order_for_sod' }],
+        [{ text: '🕘 Lihat Riwayat SOD', callback_data: 'view_sod_history' }],
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Menu: Update E2E
+async function showE2EUpdateMenu(client: any, chatId: number, telegramId: string) {
+  await client.sendMessage(chatId, '🎯 Update E2E\n\nPilih aksi:', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📝 Pilih Order untuk Update E2E', callback_data: 'select_order_for_e2e' }],
+        [{ text: '🕘 Lihat Riwayat E2E', callback_data: 'view_e2e_history' }],
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Menu: Update LME PT2
+async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: string) {
+  await client.sendMessage(chatId, '📝 Update LME PT2\n\nPilih aksi:', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📝 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
+        [{ text: '🕘 Lihat Riwayat LME PT2', callback_data: 'view_lme_pt2_history' }],
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Util untuk buat timestamp Asia/Jakarta dengan offset +07:00
+function nowJakartaWithOffset() {
+  const now = new Date();
+  const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${jakarta.getFullYear()}-${pad(jakarta.getMonth() + 1)}-${pad(jakarta.getDate())} ${pad(jakarta.getHours())}:${pad(jakarta.getMinutes())}:${pad(jakarta.getSeconds())}+07:00`;
+}
+
+// Seleksi order untuk SOD
+async function showSODOrderSelection(client: any, chatId: number, telegramId: string) {
+  const { data: orders } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, created_at')
+    .is('sod_timestamp', null)
+    .order('created_at', { ascending: true });
+
+  if (!orders || orders.length === 0) {
+    await client.sendMessage(chatId, '✅ Semua order sudah memiliki waktu SOD.');
+    return;
+  }
+
+  const lines = orders.map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})`).join('\n');
+
+  await client.sendMessage(chatId, `Pilih order untuk update SOD:\n\n${lines}`, {
+    reply_markup: {
+      inline_keyboard: [
+        ...orders.map((o: any) => [{ text: `🕘 Update SOD: ${o.order_id}`, callback_data: `sod_order_${o.order_id}` }]),
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Seleksi order untuk E2E
+async function showE2EOrderSelection(client: any, chatId: number, telegramId: string) {
+  const { data: orders } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, created_at, sod_timestamp')
+    .not('sod_timestamp', 'is', null)
+    .is('e2e_timestamp', null)
+    .order('created_at', { ascending: true });
+
+  if (!orders || orders.length === 0) {
+    await client.sendMessage(chatId, '✅ Tidak ada order yang menunggu update E2E.');
+    return;
+  }
+
+  const lines = orders.map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`).join('\n\n');
+
+  await client.sendMessage(chatId, `Pilih order untuk update E2E:\n\n${lines}`, {
+    reply_markup: {
+      inline_keyboard: [
+        ...orders.map((o: any) => [{ text: `🎯 Update E2E: ${o.order_id}`, callback_data: `e2e_order_${o.order_id}` }]),
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Seleksi order untuk LME PT2 berdasarkan progress_new survey_jaringan Not Ready
+async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId: string) {
+  const { data } = await supabaseAdmin
+    .from('progress_new')
+    .select('order_id, survey_jaringan, orders:orders(order_id, customer_name, sto, created_at, lme_pt2_end)')
+    .like('survey_jaringan->>status', 'Not Ready%')
+    .is('orders.lme_pt2_end', null)
+    .order('created_at', { ascending: true });
+
+  const items = (data || []).map((row: any) => ({
+    order_id: row.order_id,
+    customer_name: row.orders?.customer_name,
+    sto: row.orders?.sto,
+    survey: row.survey_jaringan
+  }));
+
+  if (items.length === 0) {
+    await client.sendMessage(chatId, '✅ Tidak ada order dengan status survey "Not Ready" untuk LME PT2.');
+    return;
+  }
+
+  const message = items.map((i) => `• ${i.order_id} — ${i.customer_name} (${i.sto})\n  Survey: ${i.survey?.status || '-'}${i.survey?.detail ? ` | ${i.survey.detail}` : ''}`).join('\n\n');
+
+  await client.sendMessage(chatId, `Pilih order untuk update LME PT2:\n\n${message}`, {
+    reply_markup: {
+      inline_keyboard: [
+        ...items.map((i) => [{ text: `📝 LME PT2: ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }]),
+        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+      ]
+    }
+  });
+}
+
+// Riwayat SOD
+async function showSODHistory(client: any, chatId: number, telegramId: string) {
+  const { data } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, sod_timestamp')
+    .not('sod_timestamp', 'is', null)
+    .order('sod_timestamp', { ascending: false })
+    .limit(50);
+
+  const items = (data || []).map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`);
+
+  await client.sendMessage(chatId, items.length ? `🕘 Riwayat SOD (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat SOD.', {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali ke Menu SOD', callback_data: 'sod_menu' }]] }
+  });
+}
+
+// Riwayat E2E
+async function showE2EHistory(client: any, chatId: number, telegramId: string) {
+  const { data } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, sod_timestamp, e2e_timestamp')
+    .not('e2e_timestamp', 'is', null)
+    .order('e2e_timestamp', { ascending: false })
+    .limit(50);
+
+  const items = (data || []).map((o: any) => {
+    const dur = o.sod_timestamp && o.e2e_timestamp
+      ? (new Date(o.e2e_timestamp).getTime() - new Date(o.sod_timestamp).getTime()) / 36e5
+      : null;
+    return `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}\n  E2E: ${formatIndonesianDateTime(o.e2e_timestamp)}${dur !== null ? `\n  Durasi SOD→E2E: ${formatReadableDuration(dur)}` : ''}`;
+  });
+
+  await client.sendMessage(chatId, items.length ? `🕘 Riwayat E2E (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat E2E.', {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]] }
+  });
+}
+
+// Riwayat LME PT2
+async function showLMEPT2History(client: any, chatId: number, telegramId: string) {
+  const { data } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, lme_pt2_end')
+    .not('lme_pt2_end', 'is', null)
+    .order('lme_pt2_end', { ascending: false })
+    .limit(50);
+
+  const items = (data || []).map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  LME PT2 End: ${formatIndonesianDateTime(o.lme_pt2_end)}`);
+
+  await client.sendMessage(chatId, items.length ? `🕘 Riwayat LME PT2 (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat LME PT2.', {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]] }
+  });
+}
+
+async function notifyTechnicianLMEReady(client: any, orderId: string) {
+  const { data: order } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, customer_address, contact, service_type, sto, assigned_technician')
+    .eq('order_id', orderId)
+    .maybeSingle();
+  if (!order?.assigned_technician) return;
+  const { data: tech } = await supabaseAdmin
+    .from('users')
+    .select('name, telegram_id')
+    .eq('id', order.assigned_technician)
+    .maybeSingle();
+  if (!tech?.telegram_id) return;
+  const message = '🔔 Notifikasi LME PT2 Ready\n\n' +
+    '✅ Jaringan sudah siap! HD telah mengupdate status LME PT2.\n\n' +
+    `📋 Order: ${order.customer_name}\n` +
+    `🏠 Alamat: ${order.customer_address || '-'}\n` +
+    `📞 Telepon: ${order.contact || 'N/A'}\n` +
+    `🔧 Layanan: ${order.service_type}\n` +
+    `🏢 STO: ${order.sto}\n\n` +
+    '🚀 Anda dapat melanjutkan pekerjaan instalasi sekarang.\n' +
+    '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
+    'Gunakan /progress untuk update progress pekerjaan.';
+  await client.sendMessage(Number(tech.telegram_id), message);
+}
+
+async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('sod_timestamp')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (!order || !order.sod_timestamp) return;
+    const sodIso = String(order.sod_timestamp).replace(' ', 'T');
+    const e2eIso = String(e2eTimestamp).replace(' ', 'T');
+    const sodTime = new Date(sodIso);
+    const e2eTime = new Date(e2eIso);
+    const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5;
+    const isComply = durationHours <= 72;
+    const complyStatus = isComply ? 'comply' : 'not_comply';
+    const readableDuration = formatReadableDuration(durationHours);
+    const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+    const durationWithDate = `${readableDuration} (${e2eDate})`;
+    await supabaseAdmin
+      .from('orders')
+      .update({ tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate })
+      .eq('order_id', orderId);
+  } catch (error) {
+    console.error('Error in updateComplyCalculationFromSODToE2E:', error);
+  }
+}
+
+async function handleE2EUpdate(client: any, chatId: number, telegramId: string, orderId: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (!order) {
+      await client.sendMessage(chatId, '❌ Order tidak ditemukan.');
+      return;
+    }
+    if (!order.sod_timestamp) {
+      await client.sendMessage(chatId, '❌ Order ini belum memiliki SOD timestamp.\n\n🚀 Silakan update SOD terlebih dahulu sebelum update E2E.');
+      return;
+    }
+    if (order.e2e_timestamp) {
+      await client.sendMessage(chatId, `⚠️ E2E SUDAH DISET\n\n📋 Order: ${order.order_id}\n👤 Customer: ${order.customer_name}\n🎯 E2E Timestamp: ${formatIndonesianDateTime(order.e2e_timestamp)}\n\nE2E timestamp sudah pernah diset untuk order ini.`);
+      return;
+    }
+    const jakartaTimestamp = nowJakartaWithOffset();
+    const { error: updateError } = await supabaseAdmin
+      .from('orders')
+      .update({ e2e_timestamp: jakartaTimestamp })
+      .eq('order_id', orderId);
+    if (updateError) {
+      console.error('Error updating E2E timestamp:', updateError);
+      await client.sendMessage(chatId, '❌ Gagal mengupdate E2E timestamp.');
+      return;
+    }
+    const sodTime = new Date(String(order.sod_timestamp).replace(' ', 'T'));
+    const e2eTime = new Date(String(jakartaTimestamp).replace(' ', 'T'));
+    const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5;
+    await client.sendMessage(chatId,
+      `✅ E2E TIMESTAMP BERHASIL DIUPDATE!\n\n` +
+      `📋 Order: ${order.order_id}\n` +
+      `👤 Customer: ${order.customer_name}\n` +
+      `🏢 STO: ${order.sto}\n\n` +
+      `🚀 SOD: ${formatIndonesianDateTime(order.sod_timestamp)}\n` +
+      `🎯 E2E: ${formatIndonesianDateTime(jakartaTimestamp)}\n\n` +
+      `⏱️ Durasi SOD→E2E: ${formatReadableDuration(durationHours)}\n\n` +
+      `📊 Perhitungan comply sekarang menggunakan durasi SOD ke E2E.`
+    );
+    await updateComplyCalculationFromSODToE2E(orderId, jakartaTimestamp);
+  } catch (error) {
+    console.error('Error handling E2E update:', error);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan sistem.');
+  }
+}
+
+async function handleLMEPT2Update(client: any, chatId: number, telegramId: string, orderId: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (!order) {
+      await client.sendMessage(chatId, '❌ Order tidak ditemukan.');
+      return;
+    }
+    const hdName = await getUserName(telegramId);
+    const jakartaTimestamp = nowJakartaWithOffset();
+    const { error: updateError } = await supabaseAdmin
+      .from('orders')
+      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', updated_at: new Date().toISOString() })
+      .eq('order_id', orderId);
+    if (updateError) {
+      console.error('Error updating order LME PT2:', updateError);
+      await client.sendMessage(chatId, `❌ Gagal menyimpan update LME PT2: ${updateError.message}`);
+      return;
+    }
+    await client.sendMessage(chatId,
+      `✅ LME PT2 Berhasil Diupdate!\n\n` +
+      `📋 Order: ${order.order_id}\n` +
+      `👤 Customer Name: ${order.customer_name}\n` +
+      `🕐 LME PT2 Update Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
+      `👤 Updated by: ${hdName}`
+    );
+    try {
+      await notifyTechnicianLMEReady(client, order.order_id);
+    } catch (notifyError) {
+      console.error('Error notifying technician about LME PT2 ready:', notifyError);
+    }
+  } catch (error) {
+    console.error('Error in handleLMEPT2Update:', error);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat update LME PT2.');
+  }
+}
+
+async function handleSODUpdate(client: any, chatId: number, telegramId: string, orderId: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (!order) {
+      await client.sendMessage(chatId, '❌ Order tidak ditemukan.');
+      return;
+    }
+    const hdName = await getUserName(telegramId);
+    const now = new Date();
+    const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const jakartaTimestamp = `${jakartaTime.getFullYear()}-${pad(jakartaTime.getMonth() + 1)}-${pad(jakartaTime.getDate())} ${pad(jakartaTime.getHours())}:${pad(jakartaTime.getMinutes())}:${pad(jakartaTime.getSeconds())}+07:00`;
+    const deadlineTime = new Date(jakartaTime.getTime() + (72 * 60 * 60 * 1000));
+    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
+    const { error: updateError } = await supabaseAdmin
+      .from('orders')
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, updated_at: new Date().toISOString() })
+      .eq('order_id', orderId);
+    if (updateError) {
+      console.error('Error updating order SOD:', updateError);
+      await client.sendMessage(chatId, `❌ Gagal menyimpan update SOD: ${updateError.message}`);
+      return;
+    }
+    await client.sendMessage(chatId,
+      `✅ SOD Berhasil Diupdate!\n\n` +
+      `📋 Order: ${order.order_id}\n` +
+      `👤 Customer Name: ${order.customer_name}\n` +
+      `🕐 SOD Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
+      `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
+      `👤 Updated by: ${hdName}`
+    );
+    await startTTIComplyFromSOD(orderId, jakartaTimestamp);
+  } catch (error) {
+    console.error('Error in handleSODUpdate:', error);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat update SOD.');
+  }
+}
+
+async function startTTIComplyFromSOD(orderId: string, sodTimestamp: string) {
+  try {
+    console.log(`🚀 Starting TTI Comply from SOD for order: ${orderId} at ${sodTimestamp}`);
+    console.log(`✅ TTI Comply started from SOD for order ${orderId}`);
+  } catch (error) {
+    console.error('Error starting TTI Comply from SOD:', error);
   }
 }
