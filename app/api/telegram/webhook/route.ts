@@ -7,7 +7,7 @@ import { checkUserRegistration, handleRegistrationCallback } from '@/lib/botHand
 import { showMyOrders } from '@/lib/botHandlers/orders'
 import { showProgressMenu } from '@/lib/botHandlers/progress'
 import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
-import { getUserRole } from '@/lib/botUtils'
+import { getUserRole, getStatusEmoji, getProgressStatusEmoji } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
@@ -1481,13 +1481,52 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
   try {
     const { data: order } = await supabaseAdmin
       .from('orders')
-      .select('order_id, customer_name')
+      .select('order_id, customer_name, customer_address, status')
       .eq('order_id', orderId)
       .maybeSingle();
     if (!order) {
       await client.sendMessage(chatId, '❌ Order tidak ditemukan.');
       return;
     }
+
+    const { data: progress } = await supabaseAdmin
+      .from('progress_new')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+
+    let message = '📝 Update Progress\n\n';
+    message += `📋 Order: ${order.customer_name}\n`;
+    message += `🏠 Alamat: ${order.customer_address || '-'}\n`;
+    message += `📊 Status: ${getStatusEmoji(order.status)} ${order.status}\n\n`;
+
+    message += '📈 Progress Terakhir:\n';
+
+    const stageLine = (label: string, data?: any) => {
+      const statusText = (data && data.status) ? data.status : 'undefined';
+      const emoji = getProgressStatusEmoji(statusText);
+      const time = data?.timestamp ? formatIndonesianDateTime(data.timestamp) : undefined;
+      const tech = data?.technician;
+      let line = `• ${label}: ${emoji} ${statusText}`;
+      if (time || tech) {
+        if (time && tech) {
+          line += ` - ${time} - ${tech}`;
+        } else if (time && !tech) {
+          line += ` - ${time}`;
+        } else if (!time && tech) {
+          line += ` - ${tech}`;
+        }
+      }
+      return line;
+    };
+
+    message += stageLine('Survey Jaringan', progress?.survey_jaringan) + '\n';
+    message += stageLine('Penarikan Kabel', progress?.penarikan_kabel) + '\n';
+    message += stageLine('P2P', progress?.p2p) + '\n';
+    message += stageLine('Instalasi ONT', progress?.instalasi_ont) + '\n\n';
+
+    message += 'Pilih tahapan progress:';
+
     const keyboard = {
       inline_keyboard: [
         [{ text: '🔍 Survey', callback_data: `progress_survey_${orderId}` }],
@@ -1497,10 +1536,8 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
         [{ text: '⬅️ Kembali', callback_data: 'update_progress' }],
       ],
     };
-    await client.sendMessage(chatId,
-      `Pilih stage progress untuk ORDER ${order.order_id}\nCustomer: ${order.customer_name}`,
-      { reply_markup: keyboard }
-    );
+
+    await client.sendMessage(chatId, message, { reply_markup: keyboard });
   } catch (err) {
     console.error('Error showProgressStages:', err);
     await client.sendMessage(chatId, '❌ Terjadi kesalahan saat membuka stage progress.');
