@@ -1150,31 +1150,34 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
 
 // Seleksi order untuk LME PT2 berdasarkan progress_new survey_jaringan Not Ready
 async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId: string) {
-  const { data } = await supabaseAdmin
-    .from('progress_new')
-    .select('order_id, survey_jaringan, orders:orders(order_id, customer_name, sto, created_at, lme_pt2_end)')
-    .like('survey_jaringan->>status', 'Not Ready%')
-    .is('orders.lme_pt2_end', null)
+  const { data: orders } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, created_at, progress_new:progress_new(survey_jaringan)')
+    .is('lme_pt2_end', null)
     .order('created_at', { ascending: true });
 
-  const items = (data || []).map((row: any) => ({
-    order_id: row.order_id,
-    customer_name: row.orders?.customer_name,
-    sto: row.orders?.sto,
-    survey: row.survey_jaringan
-  }));
+  const items = (orders || [])
+    .filter((o: any) => ((o.progress_new?.survey_jaringan?.status || '') as string).startsWith('Not Ready'))
+    .map((o: any) => ({
+      order_id: o.order_id,
+      customer_name: o.customer_name,
+      sto: o.sto,
+      survey: o.progress_new?.survey_jaringan
+    }));
 
   if (items.length === 0) {
     await client.sendMessage(chatId, '✅ Tidak ada order dengan status survey "Not Ready" untuk LME PT2.');
     return;
   }
 
-  const message = items.map((i) => `• ${i.order_id} — ${i.customer_name} (${i.sto})\n  Survey: ${i.survey?.status || '-'}${i.survey?.detail ? ` | ${i.survey.detail}` : ''}`).join('\n\n');
+  const message = items
+    .map((i: any) => `• ${i.order_id} — ${i.customer_name || '-'} (${i.sto || '-'})\n  Survey: ${i.survey?.status || '-'}${i.survey?.detail ? ` - ${i.survey.detail}` : ''}`)
+    .join('\n\n');
 
   await client.sendMessage(chatId, `Pilih order untuk update LME PT2:\n\n${message}`, {
     reply_markup: {
       inline_keyboard: [
-        ...items.map((i) => [{ text: `📝 LME PT2: ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }]),
+        ...items.map((i: any) => [{ text: `📝 LME PT2: ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }]),
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1190,24 +1193,63 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
     .select('order_id, customer_name, customer_address, contact, service_type, sto, assigned_technician')
     .eq('order_id', orderId)
     .maybeSingle();
-  if (!order?.assigned_technician) return;
-  const { data: tech } = await supabaseAdmin
-    .from('users')
-    .select('name, telegram_id')
-    .eq('id', order.assigned_technician)
-    .maybeSingle();
-  if (!tech?.telegram_id) return;
+
+  let targetTelegramId: string | null = null;
+
+  // 1) Prioritas: teknisi yang diassign langsung pada orders (users.id)
+  if (order?.assigned_technician) {
+    const { data: tech } = await supabaseAdmin
+      .from('users')
+      .select('name, telegram_id')
+      .eq('id', order.assigned_technician)
+      .maybeSingle();
+    if (tech?.telegram_id) {
+      targetTelegramId = String(tech.telegram_id);
+    }
+  }
+
+  // 2) Fallback: cari teknisi dari penugasan stage bila belum ada direct assignment
+  if (!targetTelegramId) {
+    const { data: assignments } = await supabaseAdmin
+      .from('order_stage_assignments')
+      .select('assigned_technician, stage')
+      .eq('order_id', orderId);
+
+    if (assignments && assignments.length) {
+      const preferredStages = ['Instalasi', 'P2P', 'Penarikan', 'Survey', 'Evidence'];
+      let found: string | undefined;
+      for (const stage of preferredStages) {
+        const a = assignments.find((x: any) => x.stage === stage && x.assigned_technician);
+        if (a) {
+          found = a.assigned_technician;
+          break;
+        }
+      }
+      if (!found) {
+        const anyAss = assignments.find((x: any) => x.assigned_technician);
+        found = anyAss?.assigned_technician;
+      }
+      if (found) {
+        targetTelegramId = String(found);
+      }
+    }
+  }
+
+  if (!targetTelegramId) return;
+
   const message = '🔔 Notifikasi LME PT2 Ready\n\n' +
     '✅ Jaringan sudah siap! HD telah mengupdate status LME PT2.\n\n' +
-    `📋 Order: ${order.customer_name}\n` +
-    `🏠 Alamat: ${order.customer_address || '-'}\n` +
-    `📞 Telepon: ${order.contact || 'N/A'}\n` +
-    `🔧 Layanan: ${order.service_type}\n` +
-    `🏢 STO: ${order.sto}\n\n` +
+    `🆔 Order: ${order?.order_id || orderId}\n` +
+    `👤 Customer Name: ${order?.customer_name || '-'}\n` +
+    `🏠 Alamat: ${order?.customer_address || '-'}\n` +
+    `📞 Telepon: ${order?.contact || 'N/A'}\n` +
+    `🔧 Layanan: ${order?.service_type || '-'}\n` +
+    `🏢 STO: ${order?.sto || '-'}\n\n` +
     '🚀 Anda dapat melanjutkan pekerjaan instalasi sekarang.\n' +
     '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
     'Gunakan /progress untuk update progress pekerjaan.';
-  await client.sendMessage(Number(tech.telegram_id), message);
+
+  await client.sendMessage(Number(targetTelegramId), message);
 }
 
 async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp: string) {
