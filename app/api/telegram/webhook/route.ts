@@ -438,13 +438,6 @@ export async function POST(req: NextRequest) {
         } else {
           await showSODOrderSelection(client as any, chatId, telegramId)
         }
-      } else if (data === 'view_sod_history') {
-        const role = await (getUserRole as any)(telegramId)
-        if (role !== 'HD') {
-          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
-        } else {
-          await showSODHistory(client as any, chatId, telegramId)
-        }
       } else if (data && data.startsWith('sod_order_')) {
         const orderId = data.replace('sod_order_', '')
         const role = await (getUserRole as any)(telegramId)
@@ -459,13 +452,6 @@ export async function POST(req: NextRequest) {
           await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
         } else {
           await showLMEPT2OrderSelection(client as any, chatId, telegramId)
-        }
-      } else if (data === 'view_lme_pt2_history') {
-        const role = await (getUserRole as any)(telegramId)
-        if (role !== 'HD') {
-          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
-        } else {
-          await showLMEPT2History(client as any, chatId, telegramId)
         }
       } else if (data && data.startsWith('lme_pt2_order_')) {
         const orderId = data.replace('lme_pt2_order_', '')
@@ -488,13 +474,6 @@ export async function POST(req: NextRequest) {
           await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
         } else {
           await showE2EOrderSelection(client as any, chatId, telegramId)
-        }
-      } else if (data === 'view_e2e_history') {
-        const role = await (getUserRole as any)(telegramId)
-        if (role !== 'HD') {
-          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
-        } else {
-          await showE2EHistory(client as any, chatId, telegramId)
         }
       } else if (data && data.startsWith('e2e_order_')) {
         const orderId = data.replace('e2e_order_', '')
@@ -1076,11 +1055,10 @@ async function getUserName(telegramId: string) {
 
 // Menu: Update SOD
 async function showSODUpdateMenu(client: any, chatId: number, telegramId: string) {
-  await client.sendMessage(chatId, '���0 Update SOD\n\nPilih aksi:', {
+  await client.sendMessage(chatId, '🚀 Update SOD\n\nPilih aksi:', {
     reply_markup: {
       inline_keyboard: [
         [{ text: '📝 Pilih Order untuk Update SOD', callback_data: 'select_order_for_sod' }],
-        [{ text: '🕘 Lihat Riwayat SOD', callback_data: 'view_sod_history' }],
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1093,7 +1071,6 @@ async function showE2EUpdateMenu(client: any, chatId: number, telegramId: string
     reply_markup: {
       inline_keyboard: [
         [{ text: '📝 Pilih Order untuk Update E2E', callback_data: 'select_order_for_e2e' }],
-        [{ text: '🕘 Lihat Riwayat E2E', callback_data: 'view_e2e_history' }],
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1106,7 +1083,6 @@ async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: str
     reply_markup: {
       inline_keyboard: [
         [{ text: '📝 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
-        [{ text: '🕘 Lihat Riwayat LME PT2', callback_data: 'view_lme_pt2_history' }],
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1205,58 +1181,8 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   });
 }
 
-// Riwayat SOD
-async function showSODHistory(client: any, chatId: number, telegramId: string) {
-  const { data } = await supabaseAdmin
-    .from('orders')
-    .select('order_id, customer_name, sto, sod_timestamp')
-    .not('sod_timestamp', 'is', null)
-    .order('sod_timestamp', { ascending: false })
-    .limit(50);
 
-  const items = (data || []).map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`);
 
-  await client.sendMessage(chatId, items.length ? `🕘 Riwayat SOD (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat SOD.', {
-    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali ke Menu SOD', callback_data: 'sod_menu' }]] }
-  });
-}
-
-// Riwayat E2E
-async function showE2EHistory(client: any, chatId: number, telegramId: string) {
-  const { data } = await supabaseAdmin
-    .from('orders')
-    .select('order_id, customer_name, sto, sod_timestamp, e2e_timestamp')
-    .not('e2e_timestamp', 'is', null)
-    .order('e2e_timestamp', { ascending: false })
-    .limit(50);
-
-  const items = (data || []).map((o: any) => {
-    const dur = o.sod_timestamp && o.e2e_timestamp
-      ? (new Date(o.e2e_timestamp).getTime() - new Date(o.sod_timestamp).getTime()) / 36e5
-      : null;
-    return `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}\n  E2E: ${formatIndonesianDateTime(o.e2e_timestamp)}${dur !== null ? `\n  Durasi SOD→E2E: ${formatReadableDuration(dur)}` : ''}`;
-  });
-
-  await client.sendMessage(chatId, items.length ? `🕘 Riwayat E2E (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat E2E.', {
-    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]] }
-  });
-}
-
-// Riwayat LME PT2
-async function showLMEPT2History(client: any, chatId: number, telegramId: string) {
-  const { data } = await supabaseAdmin
-    .from('orders')
-    .select('order_id, customer_name, sto, lme_pt2_end')
-    .not('lme_pt2_end', 'is', null)
-    .order('lme_pt2_end', { ascending: false })
-    .limit(50);
-
-  const items = (data || []).map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  LME PT2 End: ${formatIndonesianDateTime(o.lme_pt2_end)}`);
-
-  await client.sendMessage(chatId, items.length ? `🕘 Riwayat LME PT2 (terbaru):\n\n${items.join('\n\n')}` : 'Belum ada riwayat LME PT2.', {
-    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]] }
-  });
-}
 
 async function notifyTechnicianLMEReady(client: any, orderId: string) {
   const { data: order } = await supabaseAdmin
