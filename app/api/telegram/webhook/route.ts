@@ -340,6 +340,8 @@ export async function POST(req: NextRequest) {
     // 1) route callback_query
     if (update?.callback_query) {
       const data: string = update.callback_query.data
+      // Acknowledge callback to stop Telegram spinner
+      try { await (client as any).answerCallbackQuery(update.callback_query.id) } catch (_) {}
       // Handle registration callbacks first
       await (handleRegistrationCallback as any)(client as any, update.callback_query)
 
@@ -689,7 +691,9 @@ export async function POST(req: NextRequest) {
       } else if (data && data.startsWith('assign_tech_')) {
         const techId = data.replace('assign_tech_', '')
         const session = createOrderSessions.get(chatId)
-        if (session && session.type === 'create_order') {
+        if (!session || session.type !== 'create_order') {
+          await (client as any).sendMessage(chatId, 'ℹ️ Sesi pembuatan order tidak aktif. Mulai dari menu “📋 Buat Order”.')
+        } else {
           // Dapatkan user HD untuk created_by
           const { data: creator } = await supabaseAdmin
             .from('users').select('id, name').eq('telegram_id', String(telegramId)).maybeSingle()
