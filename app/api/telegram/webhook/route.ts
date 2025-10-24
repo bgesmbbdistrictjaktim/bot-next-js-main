@@ -606,6 +606,13 @@ export async function POST(req: NextRequest) {
         } else {
           await showLMEPT2OrderSelection(client as any, chatId, telegramId)
         }
+      } else if (data === 'view_lme_pt2_history') {
+        const role = await (getUserRole as any)(telegramId)
+        if (role !== 'HD') {
+          await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+        } else {
+          await showLMEPT2History(client as any, chatId, telegramId)
+        }
       } else if (data && data.startsWith('lme_pt2_order_')) {
         const orderId = data.replace('lme_pt2_order_', '')
         const role = await (getUserRole as any)(telegramId)
@@ -1238,14 +1245,22 @@ async function showE2EUpdateMenu(client: any, chatId: number, telegramId: string
 
 // Menu: Update LME PT2
 async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: string) {
-  await client.sendMessage(chatId, '📝 Update LME PT2\n\nPilih aksi:', {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '📝 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
-        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
-      ]
+  await client.sendMessage(chatId,
+    '📝 **UPDATE LME PT2**\n\n' +
+    '📋 Pilih order untuk update LME PT2 timestamp:\n' +
+    '⏰ LME PT2 akan diset ke waktu sekarang (WIB)\n' +
+    '🔔 Teknisi akan mendapat notifikasi bahwa LME PT2 sudah ready',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔍 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
+          [{ text: '📊 Lihat LME PT2 History', callback_data: 'view_lme_pt2_history' }],
+          [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
+        ]
+      }
     }
-  });
+  );
 }
 
 // Util untuk buat timestamp Asia/Jakarta dengan offset +07:00
@@ -1254,6 +1269,42 @@ function nowJakartaWithOffset() {
   const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${jakarta.getFullYear()}-${pad(jakarta.getMonth() + 1)}-${pad(jakarta.getDate())} ${pad(jakarta.getHours())}:${pad(jakarta.getMinutes())}:${pad(jakarta.getSeconds())}+07:00`;
+}
+
+// 📊 Riwayat LME PT2 (mirror gaya bot.js)
+async function showLMEPT2History(client: any, chatId: number, telegramId: string) {
+  const role = await (getUserRole as any)(telegramId)
+  if (role !== 'HD') {
+    await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat mengakses menu ini.')
+    return
+  }
+
+  const { data: orders, error } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, lme_pt2_end')
+    .not('lme_pt2_end', 'is', null)
+    .order('lme_pt2_end', { ascending: false })
+    .limit(15)
+
+  if (error) {
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil riwayat LME PT2: ${error.message}`)
+    return
+  }
+  if (!orders || orders.length === 0) {
+    await (client as any).sendMessage(chatId, '📊 Belum ada riwayat update LME PT2.')
+    return
+  }
+
+  let message = '📊 RIWAYAT UPDATE LME PT2 (Terbaru)\n\n'
+  for (let i = 0; i < orders.length; i++) {
+    const o: any = orders[i]
+    message += `${i + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})\n`
+    message += `   ⏰ LME PT2: ${formatIndonesianDateTime(o.lme_pt2_end)}\n\n`
+  }
+
+  await (client as any).sendMessage(chatId, message, {
+    reply_markup: { inline_keyboard: [[{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }]] }
+  })
 }
 
 // Seleksi order untuk SOD
@@ -1313,7 +1364,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
     .from('orders')
     .select('order_id, customer_name, sto, created_at, progress_new:progress_new(survey_jaringan)')
     .is('lme_pt2_end', null)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
 
   const items = (orders || [])
     .filter((o: any) => ((o.progress_new?.survey_jaringan?.status || '') as string).startsWith('Not Ready'))
@@ -1322,25 +1373,42 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
       customer_name: o.customer_name,
       sto: o.sto,
       survey: o.progress_new?.survey_jaringan
-    }));
+    }))
 
   if (items.length === 0) {
-    await client.sendMessage(chatId, '✅ Tidak ada order dengan status survey "Not Ready" untuk LME PT2.');
-    return;
+    await client.sendMessage(chatId,
+      'Tidak ada order yang perlu update LME PT2.\n\n' +
+      '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
+    )
+    return
   }
 
-  const message = items
-    .map((i: any) => `• ${i.order_id} — ${i.customer_name || '-'} (${i.sto || '-'})\n  Survey: ${i.survey?.status || '-'}${i.survey?.detail ? ` - ${i.survey.detail}` : ''}`)
-    .join('\n\n');
+  let message = '📝 PILIH ORDER UNTUK UPDATE LME PT2\n\n'
+  message += '📋 Order yang perlu update LME PT2 (survey jaringan: Not Ready):\n'
+  message += '⏰ = Menunggu update dari HD\n\n'
 
-  await client.sendMessage(chatId, `Pilih order untuk update LME PT2:\n\n${message}`, {
-    reply_markup: {
-      inline_keyboard: [
-        ...items.map((i: any) => [{ text: `📝 LME PT2: ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }]),
-        [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
-      ]
-    }
-  });
+  const keyboard: any[] = []
+
+  items.forEach((i: any) => {
+    const orderInfo = `${i.order_id} - ${i.customer_name} (${i.sto})`
+    const statusString = i.survey?.status || ''
+    const timestampMatch = statusString.match(/Not Ready - (.+)/)
+    const surveyTimestamp = timestampMatch ? timestampMatch[1] : 'Tidak ada'
+    const surveyNote = i.survey?.note || 'Tidak ada catatan'
+
+    message += `⏰ ${orderInfo}\n`
+    message += `   📅 Survey Jaringan: ${surveyTimestamp}\n`
+    message += `   📝 Catatan: ${surveyNote}\n\n`
+
+    keyboard.push([{ text: `📝 Update LME PT2 - ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }])
+  })
+
+  keyboard.push([{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }])
+
+  await client.sendMessage(chatId, message, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard }
+  })
 }
 
 
