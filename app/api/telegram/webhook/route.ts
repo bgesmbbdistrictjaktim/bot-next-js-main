@@ -143,7 +143,7 @@ const progressSpamGuard = new Map<number, number>()
 // Session create order (inline flow)
 const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
 const progressUpdateSessions = new Map<number, { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }>()
-const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string }>()
+const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string, nextIndex?: number, processedPhotoIds?: Set<string>, processing?: boolean }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
@@ -294,13 +294,44 @@ export async function POST(req: NextRequest) {
         .eq('order_id', orderId)
         .maybeSingle()
 
-      const nextField = getNextMissingPhotoField(evidence)
+      const sess = evidenceUploadSessions.get(chatId)
+
+      // Guard: jika sedang memproses, minta tunggu
+      if (sess?.processing) {
+        await (client as any).sendMessage(chatId, '⏳ Sedang memproses foto sebelumnya. Kirim foto berikutnya setelah pesan sukses muncul.')
+        return NextResponse.json({ ok: true })
+      }
+
+      // Dedup berdasarkan file_unique_id
+      const uniqueId: string | undefined = update.message.photo[update.message.photo.length - 1]?.file_unique_id
+      if (uniqueId && sess?.processedPhotoIds?.has(uniqueId)) {
+        return NextResponse.json({ ok: true })
+      }
+
+      // Tentukan field berikutnya: gunakan pointer sesi jika ada, kalau tidak dari DB
+      let nextField = null as null | { index: number, field: string, label: string }
+      if (sess?.nextIndex && sess.nextIndex >= 1 && sess.nextIndex <= PHOTO_TYPES.length) {
+        const candidate = PHOTO_TYPES[sess.nextIndex - 1]
+        if (!evidence || !evidence[candidate.field]) {
+          nextField = { index: sess.nextIndex, field: candidate.field, label: candidate.label }
+        }
+      }
+      if (!nextField) {
+        nextField = getNextMissingPhotoField(evidence)
+      }
+
       if (!nextField) {
         await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
         // Close order
         await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
         evidenceUploadSessions.delete(chatId)
         return NextResponse.json({ ok: true })
+      }
+
+      // Set flag processing
+      if (sess) {
+        sess.processing = true
+        evidenceUploadSessions.set(chatId, sess)
       }
 
       const fileId: string = update.message.photo[update.message.photo.length - 1].file_id
@@ -315,6 +346,10 @@ export async function POST(req: NextRequest) {
         .from('evidence-photos')
         .upload(filename, buffer, { contentType: 'image/jpeg', upsert: true })
       if (uploadError) {
+        if (sess) {
+          sess.processing = false
+          evidenceUploadSessions.set(chatId, sess)
+        }
         await (client as any).sendMessage(chatId, '❌ Gagal mengupload foto evidence.')
         return NextResponse.json({ ok: true })
       }
@@ -332,6 +367,29 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.from('evidence').update(updatePayload).eq('order_id', orderId)
       } else {
         await supabaseAdmin.from('evidence').insert({ order_id: orderId, ...updatePayload })
+      }
+
+      // Tandai processed & advance pointer
+      if (sess) {
+        if (!sess.processedPhotoIds) sess.processedPhotoIds = new Set<string>()
+        if (uniqueId) sess.processedPhotoIds.add(uniqueId)
+        const { data: updatedEvidence } = await supabaseAdmin
+          .from('evidence')
+          .select('*')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        const nextAfter = getNextMissingPhotoField(updatedEvidence)
+        if (!nextAfter) {
+          await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
+          await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
+          evidenceUploadSessions.delete(chatId)
+          await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+          return NextResponse.json({ ok: true })
+        } else {
+          sess.nextIndex = nextAfter.index
+          sess.processing = false
+          evidenceUploadSessions.set(chatId, sess)
+        }
       }
 
       await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
@@ -866,8 +924,8 @@ export async function POST(req: NextRequest) {
         } else {
           await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text })
         }
-        evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId })
-        await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
+        evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId, nextIndex: 1, processedPhotoIds: new Set<string>(), processing: false })
+        await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini atau langsung kirim; sistem akan mengaitkan foto ke order secara otomatis.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
         return NextResponse.json({ ok: true })
       }
       // Pencarian Order
