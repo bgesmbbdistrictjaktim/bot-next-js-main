@@ -369,26 +369,43 @@ export async function POST(req: NextRequest) {
         await supabaseAdmin.from('evidence').insert({ order_id: orderId, ...updatePayload })
       }
 
-      // Tandai processed & advance pointer
+      // Tandai processed & advance pointer (session-first, fallback DB)
       if (sess) {
         if (!sess.processedPhotoIds) sess.processedPhotoIds = new Set<string>()
         if (uniqueId) sess.processedPhotoIds.add(uniqueId)
-        const { data: updatedEvidence } = await supabaseAdmin
-          .from('evidence')
-          .select('*')
-          .eq('order_id', orderId)
-          .maybeSingle()
-        const nextAfter = getNextMissingPhotoField(updatedEvidence)
-        if (!nextAfter) {
+
+        // Advance session pointer optimistically
+        const nextIdx = nextField.index + 1
+        if (nextIdx > PHOTO_TYPES.length) {
+          // All 7 done — close order and clear session
           await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
           await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
           evidenceUploadSessions.delete(chatId)
           await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
           return NextResponse.json({ ok: true })
-        } else {
-          sess.nextIndex = nextAfter.index
-          sess.processing = false
+        }
+
+        sess.nextIndex = nextIdx
+        sess.processing = false
+        evidenceUploadSessions.set(chatId, sess)
+
+        // Fallback: verify from DB in case of out-of-sync writes
+        const { data: verifyEvidence } = await supabaseAdmin
+          .from('evidence')
+          .select('*')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        const dbNext = getNextMissingPhotoField(verifyEvidence)
+        if (dbNext && dbNext.index !== sess.nextIndex) {
+          sess.nextIndex = dbNext.index
           evidenceUploadSessions.set(chatId, sess)
+        } else if (!dbNext) {
+          // Completed by DB view — close order
+          await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
+          evidenceUploadSessions.delete(chatId)
+          await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
+          await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+          return NextResponse.json({ ok: true })
         }
       }
 
