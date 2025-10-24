@@ -1536,11 +1536,22 @@ async function handleSurveyResult(client: any, chatId: number, telegramId: strin
         technician: techName,
       },
     };
-    const { error: upsertErr } = await supabaseAdmin
-      .from('progress_new')
-      .upsert(updatePayload, { onConflict: 'order_id' });
-    if (upsertErr) {
-      console.error('Error upsert survey_jaringan:', upsertErr);
+    // Use conditional update/insert to avoid ON CONFLICT requirement
+    let dbErr: any = null;
+    if (row) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('progress_new')
+        .update(updatePayload)
+        .eq('order_id', orderId);
+      dbErr = updateErr;
+    } else {
+      const { error: insertErr } = await supabaseAdmin
+        .from('progress_new')
+        .insert(updatePayload);
+      dbErr = insertErr;
+    }
+    if (dbErr) {
+      console.error('Error saving survey_jaringan:', dbErr);
       await client.sendMessage(chatId, '❌ Gagal menyimpan hasil survey.');
       return;
     }
@@ -1597,11 +1608,22 @@ async function markStageCompleted(client: any, chatId: number, telegramId: strin
         technician: techName,
       },
     };
-    const { error: upsertErr } = await supabaseAdmin
-      .from('progress_new')
-      .upsert(updatePayload, { onConflict: 'order_id' });
-    if (upsertErr) {
-      console.error(`Error upsert ${stageKey}:`, upsertErr);
+    // Use conditional update/insert to avoid ON CONFLICT requirement
+    let dbErr: any = null;
+    if (row) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('progress_new')
+        .update(updatePayload)
+        .eq('order_id', orderId);
+      dbErr = updateErr;
+    } else {
+      const { error: insertErr } = await supabaseAdmin
+        .from('progress_new')
+        .insert(updatePayload);
+      dbErr = insertErr;
+    }
+    if (dbErr) {
+      console.error(`Error saving ${stageKey}:`, dbErr);
       await client.sendMessage(chatId, `❌ Gagal menyimpan status ${stageLabel}.`);
       return;
     }
@@ -1641,11 +1663,22 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
         technician: techName,
       },
     };
-    const { error: upsertErr } = await supabaseAdmin
-      .from('progress_new')
-      .upsert(updatePayload, { onConflict: 'order_id' });
-    if (upsertErr) {
-      console.error('Error upsert note:', upsertErr);
+    // Use conditional update/insert to avoid ON CONFLICT requirement
+    let dbErr: any = null;
+    if (row) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('progress_new')
+        .update(updatePayload)
+        .eq('order_id', session.orderId);
+      dbErr = updateErr;
+    } else {
+      const { error: insertErr } = await supabaseAdmin
+        .from('progress_new')
+        .insert(updatePayload);
+      dbErr = insertErr;
+    }
+    if (dbErr) {
+      console.error('Error saving note:', dbErr);
       await client.sendMessage(chatId, '❌ Gagal menyimpan catatan.');
       return true;
     }
