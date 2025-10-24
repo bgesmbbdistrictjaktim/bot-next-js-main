@@ -143,6 +143,7 @@ const progressSpamGuard = new Map<number, number>()
 // Session create order (inline flow)
 const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
 const progressUpdateSessions = new Map<number, { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }>()
+const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
@@ -273,13 +274,16 @@ export async function POST(req: NextRequest) {
     // 0) Handle photo messages (reply-based to evidence prompts)
     if (update?.message?.photo?.length) {
       const replyText: string | undefined = update?.message?.reply_to_message?.text
-      if (!replyText || !/UPLOAD_FOTO_ORDER\s+(\S+)/.test(replyText)) {
-        await (client as any).sendMessage(chatId, '⚠️ Kirim foto sebagai balasan ke pesan instruksi evidence agar bisa diproses.')
-        return NextResponse.json({ ok: true })
-      }
-      const orderId = replyText.match(/UPLOAD_FOTO_ORDER\s+(\S+)/)?.[1]
+      let orderId: string | undefined = replyText?.match(/UPLOAD_FOTO_ORDER\s+(\S+)/)?.[1]
+      // Fallback ke sesi evidence jika bukan reply
       if (!orderId) {
-        await (client as any).sendMessage(chatId, '❌ Gagal mendeteksi Order ID dari balasan evidence.')
+        const evSess = evidenceUploadSessions.get(chatId)
+        if (evSess && evSess.type === 'upload_evidence') {
+          orderId = evSess.orderId
+        }
+      }
+      if (!orderId) {
+        await (client as any).sendMessage(chatId, '⚠️ Kirim foto sebagai balasan ke pesan instruksi evidence agar bisa diproses. Jika tetap gagal, ulangi dari menu 📸 Upload Evidence untuk mendapatkan ulang instruksi.')
         return NextResponse.json({ ok: true })
       }
 
@@ -295,6 +299,7 @@ export async function POST(req: NextRequest) {
         await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
         // Close order
         await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
+        evidenceUploadSessions.delete(chatId)
         return NextResponse.json({ ok: true })
       }
 
@@ -861,6 +866,7 @@ export async function POST(req: NextRequest) {
         } else {
           await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text })
         }
+        evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId })
         await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
         return NextResponse.json({ ok: true })
       }
