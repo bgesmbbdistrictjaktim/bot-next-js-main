@@ -142,6 +142,7 @@ const progressSpamGuard = new Map<number, number>()
 
 // Session create order (inline flow)
 const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
+const progressUpdateSessions = new Map<number, { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
@@ -326,8 +327,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // 0.5) Handle plain text input for inline Create Order session (order_id, customer data)
+    // 0.5) Handle plain text input for sessions (Create Order & Progress Notes)
     if (update?.message?.text) {
+      // Handle progress note session first
+      const prog = progressUpdateSessions.get(chatId)
+      if (prog && prog.type === 'update_progress') {
+        const handledProg = await handleProgressTextInput(client as any, chatId, telegramId, update.message.text, prog)
+        if (handledProg) {
+          progressUpdateSessions.delete(chatId)
+          return NextResponse.json({ ok: true })
+        }
+      }
+      // Then handle create order session
       const session = createOrderSessions.get(chatId)
       if (session && session.type === 'create_order') {
         const handled = await handleCreateOrderTextInput(client as any, chatId, telegramId, update.message.text)
@@ -367,6 +378,48 @@ export async function POST(req: NextRequest) {
         await (showEvidenceMenu as any)(client as any, chatId, telegramId)
       } else if (data && data.startsWith('tech_stage_progress_')) {
         await (showProgressMenu as any)(client as any, chatId, telegramId)
+      } else if (data && data.startsWith('progress_order_')) {
+        const orderId = data.replace('progress_order_', '')
+        await showProgressStages(client as any, chatId, orderId)
+      } else if (data && data.startsWith('progress_survey_')) {
+        const orderId = data.replace('progress_survey_', '')
+        await promptSurveyOptions(client as any, chatId, orderId)
+      } else if (data && data.startsWith('survey_ready_')) {
+        const orderId = data.replace('survey_ready_', '')
+        await handleSurveyResult(client as any, chatId, telegramId, orderId, true)
+      } else if (data && data.startsWith('survey_not_ready_')) {
+        const orderId = data.replace('survey_not_ready_', '')
+        await handleSurveyResult(client as any, chatId, telegramId, orderId, false)
+      } else if (data && data.startsWith('progress_penarikan_')) {
+        const orderId = data.replace('progress_penarikan_', '')
+        await promptStageOptions(client as any, chatId, 'penarikan_kabel', 'Penarikan Kabel', orderId)
+      } else if (data && data.startsWith('progress_p2p_')) {
+        const orderId = data.replace('progress_p2p_', '')
+        await promptStageOptions(client as any, chatId, 'p2p', 'P2P', orderId)
+      } else if (data && data.startsWith('progress_instalasi_')) {
+        const orderId = data.replace('progress_instalasi_', '')
+        await promptStageOptions(client as any, chatId, 'instalasi_ont', 'Instalasi ONT', orderId)
+      } else if (data && data.startsWith('penarikan_done_')) {
+        const orderId = data.replace('penarikan_done_', '')
+        await markStageCompleted(client as any, chatId, telegramId, orderId, 'penarikan_kabel', 'Penarikan Kabel')
+      } else if (data && data.startsWith('p2p_done_')) {
+        const orderId = data.replace('p2p_done_', '')
+        await markStageCompleted(client as any, chatId, telegramId, orderId, 'p2p', 'P2P')
+      } else if (data && data.startsWith('instalasi_done_')) {
+        const orderId = data.replace('instalasi_done_', '')
+        await markStageCompleted(client as any, chatId, telegramId, orderId, 'instalasi_ont', 'Instalasi ONT')
+      } else if (data && data.startsWith('add_note_penarikan_')) {
+        const orderId = data.replace('add_note_penarikan_', '')
+        progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'penarikan_kabel' })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Penarikan Kabel\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`)
+      } else if (data && data.startsWith('add_note_p2p_')) {
+        const orderId = data.replace('add_note_p2p_', '')
+        progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'p2p' })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - P2P\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`)
+      } else if (data && data.startsWith('add_note_instalasi_')) {
+        const orderId = data.replace('add_note_instalasi_', '')
+        progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'instalasi_ont' })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Instalasi ONT\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`)
       } else if (data === 'search_order') {
         await (client as any).sendMessage(
           chatId,
@@ -1420,5 +1473,214 @@ async function startTTIComplyFromSOD(orderId: string, sodTimestamp: string) {
     console.log(`✅ TTI Comply started from SOD for order ${orderId}`);
   } catch (error) {
     console.error('Error starting TTI Comply from SOD:', error);
+  }
+}
+
+// ===== Progress Flow (mirrored from bot.js) =====
+async function showProgressStages(client: any, chatId: number, orderId: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('order_id, customer_name')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (!order) {
+      await client.sendMessage(chatId, '❌ Order tidak ditemukan.');
+      return;
+    }
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: '🔍 Survey', callback_data: `progress_survey_${orderId}` }],
+        [{ text: '📡 Penarikan Kabel', callback_data: `progress_penarikan_${orderId}` }],
+        [{ text: '🔗 P2P', callback_data: `progress_p2p_${orderId}` }],
+        [{ text: '🔧 Instalasi ONT', callback_data: `progress_instalasi_${orderId}` }],
+        [{ text: '⬅️ Kembali', callback_data: 'update_progress' }],
+      ],
+    };
+    await client.sendMessage(chatId,
+      `Pilih stage progress untuk ORDER ${order.order_id}\nCustomer: ${order.customer_name}`,
+      { reply_markup: keyboard }
+    );
+  } catch (err) {
+    console.error('Error showProgressStages:', err);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat membuka stage progress.');
+  }
+}
+
+async function promptSurveyOptions(client: any, chatId: number, orderId: string) {
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '✅ Jaringan Ready', callback_data: `survey_ready_${orderId}` }],
+      [{ text: '❌ Jaringan Not Ready', callback_data: `survey_not_ready_${orderId}` }],
+      [{ text: '⬅️ Kembali', callback_data: `progress_order_${orderId}` }],
+    ],
+  };
+  await client.sendMessage(chatId, `Hasil Survey untuk ORDER ${orderId}?`, { reply_markup: keyboard });
+}
+
+async function handleSurveyResult(client: any, chatId: number, telegramId: string, orderId: string, isReady: boolean) {
+  try {
+    const techName = await getUserName(telegramId);
+    const jakartaTimestamp = nowJakartaWithOffset();
+    const { data: row } = await supabaseAdmin
+      .from('progress_new')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    const updatePayload: any = {
+      order_id: orderId,
+      survey_jaringan: {
+        ...(row?.survey_jaringan || {}),
+        status: isReady ? 'Ready' : 'Not Ready',
+        timestamp: jakartaTimestamp,
+        technician: techName,
+      },
+    };
+    const { error: upsertErr } = await supabaseAdmin
+      .from('progress_new')
+      .upsert(updatePayload, { onConflict: 'order_id' });
+    if (upsertErr) {
+      console.error('Error upsert survey_jaringan:', upsertErr);
+      await client.sendMessage(chatId, '❌ Gagal menyimpan hasil survey.');
+      return;
+    }
+    // Update order status based on survey result
+    const newStatus = isReady ? 'In Progress' : 'Pending';
+    const { error: orderErr } = await supabaseAdmin
+      .from('orders')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('order_id', orderId);
+    if (orderErr) {
+      console.error('Error updating order after survey:', orderErr);
+    }
+    await client.sendMessage(
+      chatId,
+      `✅ Survey diperbarui untuk ORDER ${orderId}\nStatus: ${isReady ? 'Ready' : 'Not Ready'}\nWaktu: ${formatIndonesianDateTime(jakartaTimestamp)}\nTeknisi: ${techName}`
+    );
+    if (!isReady) {
+      await notifyHDNetworkNotReady(client, orderId);
+    }
+    // Back to stages
+    await showProgressStages(client, chatId, orderId);
+  } catch (err) {
+    console.error('Error handleSurveyResult:', err);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat menyimpan hasil survey.');
+  }
+}
+
+async function promptStageOptions(client: any, chatId: number, stageKey: 'penarikan_kabel'|'p2p'|'instalasi_ont', stageLabel: string, orderId: string) {
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: '✅ Tandai Selesai', callback_data: `${stageKey === 'penarikan_kabel' ? 'penarikan_done_' : stageKey === 'p2p' ? 'p2p_done_' : 'instalasi_done_'}${orderId}` }],
+      [{ text: '📝 Tambah Catatan', callback_data: `${stageKey === 'penarikan_kabel' ? 'add_note_penarikan_' : stageKey === 'p2p' ? 'add_note_p2p_' : 'add_note_instalasi_'}${orderId}` }],
+      [{ text: '⬅️ Kembali', callback_data: `progress_order_${orderId}` }],
+    ],
+  };
+  await client.sendMessage(chatId, `Stage: ${stageLabel}\nORDER ${orderId}\nPilih aksi:`, { reply_markup: keyboard });
+}
+
+async function markStageCompleted(client: any, chatId: number, telegramId: string, orderId: string, stageKey: 'penarikan_kabel'|'p2p'|'instalasi_ont', stageLabel: string) {
+  try {
+    const techName = await getUserName(telegramId);
+    const jakartaTimestamp = nowJakartaWithOffset();
+    const { data: row } = await supabaseAdmin
+      .from('progress_new')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    const updatePayload: any = {
+      order_id: orderId,
+      [stageKey]: {
+        ...(row?.[stageKey] || {}),
+        status: 'Selesai',
+        timestamp: jakartaTimestamp,
+        technician: techName,
+      },
+    };
+    const { error: upsertErr } = await supabaseAdmin
+      .from('progress_new')
+      .upsert(updatePayload, { onConflict: 'order_id' });
+    if (upsertErr) {
+      console.error(`Error upsert ${stageKey}:`, upsertErr);
+      await client.sendMessage(chatId, `❌ Gagal menyimpan status ${stageLabel}.`);
+      return;
+    }
+    // Ensure order moves to In Progress if was Pending
+    const { error: orderErr } = await supabaseAdmin
+      .from('orders')
+      .update({ status: 'In Progress', updated_at: new Date().toISOString() })
+      .eq('order_id', orderId);
+    if (orderErr) {
+      console.error('Error updating order status after stage complete:', orderErr);
+    }
+    await client.sendMessage(chatId,
+      `✅ ${stageLabel} ditandai selesai untuk ORDER ${orderId}\nWaktu: ${formatIndonesianDateTime(jakartaTimestamp)}\nTeknisi: ${techName}`
+    );
+    await showProgressStages(client, chatId, orderId);
+  } catch (err) {
+    console.error('Error markStageCompleted:', err);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat menyimpan status tahap.');
+  }
+}
+
+async function handleProgressTextInput(client: any, chatId: number, telegramId: string, text: string, session: { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }) {
+  try {
+    const techName = await getUserName(telegramId);
+    const jakartaTimestamp = nowJakartaWithOffset();
+    const { data: row } = await supabaseAdmin
+      .from('progress_new')
+      .select('*')
+      .eq('order_id', session.orderId)
+      .maybeSingle();
+    const updatePayload: any = {
+      order_id: session.orderId,
+      [session.stage]: {
+        ...(row?.[session.stage] || {}),
+        note: text,
+        last_update: jakartaTimestamp,
+        technician: techName,
+      },
+    };
+    const { error: upsertErr } = await supabaseAdmin
+      .from('progress_new')
+      .upsert(updatePayload, { onConflict: 'order_id' });
+    if (upsertErr) {
+      console.error('Error upsert note:', upsertErr);
+      await client.sendMessage(chatId, '❌ Gagal menyimpan catatan.');
+      return true;
+    }
+    await client.sendMessage(chatId, `✅ Catatan tersimpan untuk ORDER ${session.orderId} (stage: ${session.stage}).`);
+    // Tampilkan kembali opsi tahap
+    await promptStageOptions(client, chatId, session.stage, session.stage === 'penarikan_kabel' ? 'Penarikan Kabel' : session.stage === 'p2p' ? 'P2P' : 'Instalasi ONT', session.orderId);
+    return true;
+  } catch (err) {
+    console.error('Error handleProgressTextInput:', err);
+    await client.sendMessage(chatId, '❌ Terjadi kesalahan saat menyimpan catatan.');
+    return true;
+  }
+}
+
+async function notifyHDNetworkNotReady(client: any, orderId: string) {
+  try {
+    const { data: order } = await supabaseAdmin
+      .from('orders')
+      .select('order_id, customer_name, sto')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    const { data: hdUsers } = await supabaseAdmin
+      .from('users')
+      .select('telegram_id')
+      .eq('role', 'HD');
+    const msg = `⚠️ NOTIFIKASI HD\n\nORDER ${orderId} (Customer: ${order?.customer_name || '-'}, STO: ${order?.sto || '-'})\nHasil survey: Jaringan NOT READY. Mohon tindak lanjut.`;
+    if (hdUsers && hdUsers.length) {
+      for (const u of hdUsers) {
+        const hdChatId = Number(u.telegram_id);
+        if (hdChatId) {
+          await client.sendMessage(hdChatId, msg);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error notifyHDNetworkNotReady:', err);
   }
 }
