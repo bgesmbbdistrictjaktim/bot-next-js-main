@@ -1363,7 +1363,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   const { data: progresses, error: progErr } = await supabaseAdmin
     .from('progress_new')
     .select('order_id, survey_jaringan')
-    .ilike('survey_jaringan->>status', 'Not Ready%')
+    .ilike('survey_jaringan->>status', '%Not Ready%')
 
   if (progErr) {
     await (client as any).sendMessage(chatId, `❌ Gagal mengambil data progress: ${progErr.message}`)
