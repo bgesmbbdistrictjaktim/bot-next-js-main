@@ -1066,7 +1066,7 @@ export async function POST(req: NextRequest) {
               created_by: createdById,
               assigned_technician: techId,
               status: 'Pending',
-              technician_assigned_at: nowJakartaIso(),
+              technician_assigned_at: nowJakartaWithOffset(),
             }
             const { data: inserted, error: insertError } = await supabaseAdmin
               .from('orders')
@@ -1464,14 +1464,18 @@ export async function POST(req: NextRequest) {
 function formatIndonesianDateTime(dateIso?: string | null) {
   if (!dateIso) return '-';
   const d = new Date(dateIso);
+  if (!isFinite(d.getTime())) return '-';
   try {
-    return d.toLocaleString('id-ID', {
+    const s = d.toLocaleString('id-ID', {
       timeZone: 'Asia/Jakarta',
       year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     });
+    // Pastikan pemisah waktu konsisten menggunakan ':' dan tambahkan label WIB
+    return s.replace(/\./g, ':') + ' WIB';
   } catch {
-    return d.toISOString();
+    // Fallback jika Intl gagal; konversi ISO ke format yang mudah dibaca
+    return d.toISOString().replace('T', ' ').replace('Z', ' +00:00');
   }
 }
 
@@ -1903,7 +1907,7 @@ async function handleLMEPT2Update(client: any, chatId: number, telegramId: strin
     const jakartaTimestamp = nowJakartaWithOffset();
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', updated_at: new Date().toISOString() })
+      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order LME PT2:', updateError);
@@ -1948,7 +1952,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, updated_at: new Date().toISOString() })
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
@@ -2111,7 +2115,7 @@ async function handleSurveyResult(client: any, chatId: number, telegramId: strin
     const newStatus = isReady ? 'In Progress' : 'Pending';
     const { error: orderErr } = await supabaseAdmin
       .from('orders')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .update({ status: newStatus, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (orderErr) {
       console.error('Error updating order after survey:', orderErr);
@@ -2127,7 +2131,7 @@ async function handleSurveyResult(client: any, chatId: number, telegramId: strin
         if (!ord?.lme_pt2_start) {
           const { error: startErr } = await supabaseAdmin
             .from('orders')
-            .update({ lme_pt2_start: jakartaTimestamp, updated_at: new Date().toISOString() })
+            .update({ lme_pt2_start: jakartaTimestamp, updated_at: nowJakartaWithOffset() })
             .eq('order_id', orderId);
           if (startErr) {
             console.error('Error setting lme_pt2_start:', startErr);
@@ -2203,7 +2207,7 @@ async function markStageCompleted(client: any, chatId: number, telegramId: strin
     // Ensure order moves to In Progress if was Pending
     const { error: orderErr } = await supabaseAdmin
       .from('orders')
-      .update({ status: 'In Progress', updated_at: new Date().toISOString() })
+      .update({ status: 'In Progress', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (orderErr) {
       console.error('Error updating order status after stage complete:', orderErr);
