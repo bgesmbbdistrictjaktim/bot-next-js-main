@@ -1830,7 +1830,7 @@ async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp
     const e2eTime = new Date(e2eIso);
     const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5;
     const isComply = durationHours <= 72;
-    const complyStatus = isComply ? 'comply' : 'not_comply';
+    const complyStatus = isComply ? 'Comply' : 'Not Comply';
     const readableDuration = formatReadableDuration(durationHours);
     const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const durationWithDate = `${readableDuration} (${e2eDate})`;
@@ -1952,7 +1952,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'in_progress', updated_at: nowJakartaWithOffset() })
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'In Progress', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
