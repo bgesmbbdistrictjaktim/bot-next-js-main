@@ -1995,7 +1995,15 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
       await client.sendMessage(chatId, '❌ Gagal menyimpan catatan.');
       return true;
     }
-    await client.sendMessage(chatId, `✅ Catatan tersimpan untuk ORDER ${session.orderId} (stage: ${session.stage}).`);
+    const stageLabelPretty = session.stage === 'penarikan_kabel' ? 'Penarikan' : (session.stage === 'p2p' ? 'P2P' : 'Instalasi ONT');
+    const timeStr = formatIndonesianDateTime(jakartaTimestamp);
+    await client.sendMessage(chatId,
+      `✅ Progress Berhasil Diupdate!\n\n` +
+      `📝 Tahapan: ${stageLabelPretty}\n` +
+      `📊 Status: Selesai - ${timeStr}\n` +
+      `📝 Catatan: ${text}\n` +
+      `👷🏻‍♂️ Teknisi: ${techName}`
+    );
     // Tidak menampilkan kembali opsi tahap setelah catatan disimpan
     return true;
   } catch (err) {
