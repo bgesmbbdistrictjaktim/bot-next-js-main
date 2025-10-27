@@ -510,9 +510,21 @@ export async function POST(req: NextRequest) {
       if (evSess && evSess.type === 'upload_evidence') {
         const t = (update.message.text || '').trim()
         if (evSess.waitingInput === 'odp_name') {
-          await supabaseAdmin
+          const { data: evODPExist } = await supabaseAdmin
             .from('evidence')
-            .upsert({ order_id: evSess.orderId, odp_name: t, uploaded_at: nowJakartaWithOffset() }, { onConflict: 'order_id' })
+            .select('order_id')
+            .eq('order_id', evSess.orderId)
+            .maybeSingle()
+          if (evODPExist) {
+            await supabaseAdmin
+              .from('evidence')
+              .update({ odp_name: t, uploaded_at: nowJakartaWithOffset() })
+              .eq('order_id', evSess.orderId)
+          } else {
+            await supabaseAdmin
+              .from('evidence')
+              .insert({ order_id: evSess.orderId, odp_name: t, uploaded_at: nowJakartaWithOffset() })
+          }
 
           evSess.waitingInput = 'ont_sn'
           evidenceUploadSessions.set(chatId, evSess)
@@ -520,9 +532,21 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true })
         }
         if (evSess.waitingInput === 'ont_sn') {
-          await supabaseAdmin
+          const { data: evSNExist } = await supabaseAdmin
             .from('evidence')
-            .upsert({ order_id: evSess.orderId, ont_sn: (t || '-'), uploaded_at: nowJakartaWithOffset() }, { onConflict: 'order_id' })
+            .select('order_id')
+            .eq('order_id', evSess.orderId)
+            .maybeSingle()
+          if (evSNExist) {
+            await supabaseAdmin
+              .from('evidence')
+              .update({ ont_sn: (t || '-'), uploaded_at: nowJakartaWithOffset() })
+              .eq('order_id', evSess.orderId)
+          } else {
+            await supabaseAdmin
+              .from('evidence')
+              .insert({ order_id: evSess.orderId, ont_sn: (t || '-'), uploaded_at: nowJakartaWithOffset() })
+          }
 
           // Ready to start photo uploads
           evSess.waitingInput = undefined
