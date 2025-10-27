@@ -149,6 +149,19 @@ const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG'
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
 const SERVICE_OPTIONS = ['Astinet','Metro','Vpn Ip','Ip Transit','Siptrunk']
 
+// Canonical mapping to satisfy DB check constraint orders_service_type_check
+const SERVICE_CANONICAL_MAP: Record<string, string> = {
+  Astinet: 'Astinet',
+  Metro: 'metro',
+  'Vpn Ip': 'vpn ip',
+  'Ip Transit': 'ip transit',
+  Siptrunk: 'siptrunk',
+}
+function normalizeServiceType(val: string): string {
+  const t = (val || '').trim()
+  return SERVICE_CANONICAL_MAP[t] ?? t
+}
+
 function chunkKeyboard(items: string[], prefix: string, perRow = 3) {
   const keyboard: any[] = []
   for (let i = 0; i < items.length; i += perRow) {
@@ -858,7 +871,7 @@ export async function POST(req: NextRequest) {
               contact: session.data.contact,
               sto: session.data.sto,
               transaction_type: session.data.transaction_type,
-              service_type: session.data.service_type,
+              service_type: normalizeServiceType(session.data.service_type),
               created_by: createdById,
               assigned_technician: techId,
               status: 'Pending',
@@ -918,7 +931,7 @@ export async function POST(req: NextRequest) {
               contact: session.data.contact,
               sto: session.data.sto,
               transaction_type: session.data.transaction_type,
-              service_type: session.data.service_type,
+              service_type: normalizeServiceType(session.data.service_type),
               created_by: createdById,
               assigned_technician: null,
               status: 'Pending',
