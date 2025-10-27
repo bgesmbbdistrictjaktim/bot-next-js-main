@@ -128,9 +128,28 @@ async function formatOrderDetail(order: any, evidence?: any, createdByName?: str
   lines.push('')
   // 🎯 TTI COMPLY
   lines.push('🎯 TTI COMPLY')
+  // Derive TTI status & actual duration when E2E exists, even if DB fields haven't updated yet
+  const hasE2E = !!order.e2e_timestamp
+  let ttiStatus = order.tti_comply_status || ''
+  let ttiActualDuration = order.tti_comply_actual_duration || ''
+  if (hasE2E && order.sod_timestamp) {
+    try {
+      const sodIso = String(order.sod_timestamp).replace(' ', 'T')
+      const e2eIso = String(order.e2e_timestamp).replace(' ', 'T')
+      const sodTime = new Date(sodIso)
+      const e2eTime = new Date(e2eIso)
+      const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5
+      const computedStatus = durationHours <= 72 ? 'Comply' : 'Not Comply'
+      const readable = formatReadableDuration(durationHours)
+      const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })
+      const computedDuration = `${readable} (${e2eDate})`
+      if (!ttiStatus || ttiStatus === 'In Progress') ttiStatus = computedStatus
+      if (!ttiActualDuration || ttiActualDuration === '-') ttiActualDuration = computedDuration
+    } catch {}
+  }
   lines.push(`• Deadline: ${order.tti_comply_deadline ? formatWIB(order.tti_comply_deadline) : '-'}`)
-  lines.push(`• Status: ${order.tti_comply_status || '-'}`)
-  lines.push(`• Durasi Aktual: ${order.tti_comply_actual_duration || '-'}`)
+  lines.push(`• Status: ${ttiStatus || (hasE2E ? 'Comply' : (order.tti_comply_status || '-'))}`)
+  lines.push(`• Durasi Aktual: ${ttiActualDuration || (hasE2E ? '-' : (order.tti_comply_actual_duration || '-'))}`)
   lines.push('')
   // 📈 INFORMASI TRACK PROGRESS
   const { data: progress } = await supabaseAdmin
@@ -1855,7 +1874,7 @@ async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp
     const durationWithDate = `${readableDuration} (${e2eDate})`;
     await supabaseAdmin
       .from('orders')
-      .update({ tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate })
+      .update({ tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
   } catch (error) {
     console.error('Error in updateComplyCalculationFromSODToE2E:', error);
@@ -1884,7 +1903,7 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
     const jakartaTimestamp = nowJakartaWithOffset();
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ e2e_timestamp: jakartaTimestamp })
+      .update({ e2e_timestamp: jakartaTimestamp, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating E2E timestamp:', updateError);
