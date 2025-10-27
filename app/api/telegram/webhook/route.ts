@@ -1967,12 +1967,16 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
       .select('*')
       .eq('order_id', session.orderId)
       .maybeSingle();
+    const prevStage = row?.[session.stage] || {};
+    const newStatus = prevStage?.status === 'Selesai' ? 'Selesai' : 'In Progress';
+    const newTimestamp = prevStage?.timestamp || jakartaTimestamp;
     const updatePayload: any = {
       order_id: session.orderId,
       [session.stage]: {
-        ...(row?.[session.stage] || {}),
+        ...prevStage,
         note: text,
-        last_update: jakartaTimestamp,
+        status: newStatus,
+        timestamp: newTimestamp,
         technician: techName,
       },
     };
@@ -2004,7 +2008,8 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
       `📝 Catatan: ${text}\n` +
       `👷🏻‍♂️ Teknisi: ${techName}`
     );
-    // Tidak menampilkan kembali opsi tahap setelah catatan disimpan
+    // Tampilkan ringkasan progress seperti mekanisme tombol selesai
+    await showProgressStages(client, chatId, session.orderId);
     return true;
   } catch (err) {
     console.error('Error handleProgressTextInput:', err);
