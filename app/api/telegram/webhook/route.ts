@@ -1901,9 +1901,14 @@ async function handleLMEPT2Update(client: any, chatId: number, telegramId: strin
     }
     const hdName = await getUserName(telegramId);
     const jakartaTimestamp = nowJakartaWithOffset();
+    // Setelah PT2 selesai, mulai TTI comply dan set deadline 3x24 dari waktu PT2 end
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const pt2End = new Date(String(jakartaTimestamp).replace(' ', 'T'));
+    const deadlineTime = new Date(pt2End.getTime() + (72 * 60 * 60 * 1000));
+    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', updated_at: nowJakartaWithOffset() })
+      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', tti_comply_status: 'In Progress', tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order LME PT2:', updateError);
@@ -1915,6 +1920,8 @@ async function handleLMEPT2Update(client: any, chatId: number, telegramId: strin
       `📋 Order: ${order.order_id}\n` +
       `👤 Customer Name: ${order.customer_name}\n` +
       `🕐 LME PT2 Update Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
+      `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
+      `📊 TTI Status: In Progress\n` +
       `👤 Updated by: ${hdName}`
     );
     try {
@@ -1944,11 +1951,9 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
     const pad = (n: number) => String(n).padStart(2, '0');
     const jakartaTimestamp = `${jakartaTime.getFullYear()}-${pad(jakartaTime.getMonth() + 1)}-${pad(jakartaTime.getDate())} ${pad(jakartaTime.getHours())}:${pad(jakartaTime.getMinutes())}:${pad(jakartaTime.getSeconds())}+07:00`;
-    const deadlineTime = new Date(jakartaTime.getTime() + (72 * 60 * 60 * 1000));
-    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'In Progress', updated_at: nowJakartaWithOffset() })
+      .update({ sod_timestamp: jakartaTimestamp, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
@@ -1960,8 +1965,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
       `📋 Order: ${order.order_id}\n` +
       `👤 Customer Name: ${order.customer_name}\n` +
       `🕐 SOD Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
-      `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
-      `📊 TTI Status: In Progress\n` +
+      `📊 TTI Status: Pending (akan dimulai setelah PT2 selesai)\n` +
       `👤 Updated by: ${hdName}`
     );
     await startTTIComplyFromSOD(orderId, jakartaTimestamp);
