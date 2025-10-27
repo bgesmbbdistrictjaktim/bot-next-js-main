@@ -2014,7 +2014,7 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
       .maybeSingle();
 
     let message = '📝 Update Progress\n\n';
-    message += `📋 Order: ${order.customer_name}\n`;
+    message += `📋 Order: ${order.order_id} - ${order.customer_name}\n`;
     message += `🏠 Alamat: ${order.customer_address || '-'}\n`;
     message += `📊 Status: ${getStatusEmoji(order.status)} ${order.status}\n\n`;
 
@@ -2164,7 +2164,17 @@ async function promptStageOptions(client: any, chatId: number, stageKey: 'penari
       [{ text: '⬅️ Kembali', callback_data: `progress_order_${orderId}` }],
     ],
   };
-  await client.sendMessage(chatId, `Stage: ${stageLabel}\nORDER ${orderId}\nPilih aksi:`, { reply_markup: keyboard });
+  try {
+    const { data: orderInfo } = await supabaseAdmin
+      .from('orders')
+      .select('order_id, customer_name')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    const custName = orderInfo?.customer_name || '-';
+    await client.sendMessage(chatId, `Stage: ${stageLabel}\n🆔 Order: ${orderId} - ${custName}\nPilih aksi:`, { reply_markup: keyboard });
+  } catch (e) {
+    await client.sendMessage(chatId, `Stage: ${stageLabel}\n🆔 Order: ${orderId}\nPilih aksi:`, { reply_markup: keyboard });
+  }
 }
 
 async function markStageCompleted(client: any, chatId: number, telegramId: string, orderId: string, stageKey: 'penarikan_kabel'|'p2p'|'instalasi_ont', stageLabel: string) {
