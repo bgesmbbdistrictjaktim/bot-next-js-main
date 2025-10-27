@@ -35,3 +35,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# logs and scripts
+logs/
+*.log
+scripts/
+
+# PM2 artifacts
+ecosystem.config.js
+.pm2/
