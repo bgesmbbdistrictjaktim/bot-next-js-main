@@ -1891,7 +1891,33 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    console.log('🔍 Fetching LME PT2 orders from progress_new...');
+    console.log('🔍 Fetching LME PT2 orders from progress_new and orders...');
+
+    // Helper: decode literal unicode escapes to native characters
+    function decodeUnicodeEscapes(text) {
+      if (!text || typeof text !== 'string') return text;
+      try {
+        return text
+          .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+          .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      } catch {
+        return text;
+      }
+    }
+
+    // Helper: format timestamp to WIB like dd/MM/yyyy, HH.mm.ss
+    function formatWIB(ts) {
+      if (!ts) return 'Tidak ada';
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return 'Tidak ada';
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const HH = String(d.getHours()).padStart(2, '0');
+      const MM = String(d.getMinutes()).padStart(2, '0');
+      const SS = String(d.getSeconds()).padStart(2, '0');
+      return `${dd}/${mm}/${yyyy}, ${HH}.${MM}.${SS}`;
+    }
 
     // Ambil order dari tabel progress_new yang survey_jaringan statusnya mengandung 'Not Ready'
     const { data: progressData, error } = await supabase
@@ -1904,14 +1930,15 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
           customer_name,
           sto,
           created_at,
-          lme_pt2_end
+          lme_pt2_end,
+          lme_pt2_start
         )
       `)
       .like('survey_jaringan->>status', 'Not Ready%')
       .is('orders.lme_pt2_end', null)
       .order('created_at', { ascending: true });
 
-    console.log('📊 Query result:', { 
+    console.log('📊 Query result (progress_new Not Ready):', { 
       error: error, 
       dataCount: progressData?.length || 0,
       data: progressData 
@@ -1923,48 +1950,93 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
       return;
     }
 
-    if (!progressData || progressData.length === 0) {
-      console.log('📋 No orders found with survey_jaringan status "Not Ready"');
-      bot.sendMessage(chatId, 
+    // Tambah sumber kedua: orders yang pernah Not Ready (punya lme_pt2_start) tapi belum lme_pt2_end
+    const { data: ordersWithStart, error: startError } = await supabase
+      .from('orders')
+      .select('order_id, customer_name, sto, created_at, lme_pt2_start, lme_pt2_end')
+      .is('lme_pt2_end', null)
+      .not('lme_pt2_start', 'is', null)
+      .order('created_at', { ascending: true });
+
+    console.log('📊 Query result (orders with lme_pt2_start & no end):', {
+      error: startError,
+      dataCount: ordersWithStart?.length || 0,
+      data: ordersWithStart
+    });
+
+    if (startError) {
+      console.error('Error fetching orders with lme_pt2_start:', startError);
+      bot.sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil data order tambahan.');
+      return;
+    }
+
+    const itemsMap = new Map();
+    (progressData || []).forEach(progress => {
+      if (!progress.orders) return;
+      const order = progress.orders;
+      const statusString = progress.survey_jaringan?.status || '';
+      const tsFromField = progress.survey_jaringan?.timestamp ? formatWIB(progress.survey_jaringan.timestamp) : null;
+      const tsFromStatus = (() => {
+        const m = statusString.match(/Not Ready - (.+)/);
+        return m ? m[1] : null;
+      })();
+      const surveyTimestamp = tsFromField || tsFromStatus || (order.lme_pt2_start ? formatWIB(order.lme_pt2_start) : 'Tidak ada');
+      const surveyNote = progress.survey_jaringan?.note || 'Tidak ada catatan';
+
+      itemsMap.set(order.order_id, {
+        order_id: order.order_id,
+        customer_name: order.customer_name,
+        sto: order.sto,
+        surveyTimestamp,
+        surveyNote
+      });
+    });
+
+    (ordersWithStart || []).forEach(order => {
+      if (itemsMap.has(order.order_id)) return; // sudah ada dari progress Not Ready
+      const surveyTimestamp = order.lme_pt2_start ? formatWIB(order.lme_pt2_start) : 'Tidak ada';
+      itemsMap.set(order.order_id, {
+        order_id: order.order_id,
+        customer_name: order.customer_name,
+        sto: order.sto,
+        surveyTimestamp,
+        surveyNote: 'Tidak ada catatan'
+      });
+    });
+
+    const items = Array.from(itemsMap.values());
+
+    if (!items || items.length === 0) {
+      console.log('📋 No orders found for LME PT2 selection');
+      bot.sendMessage(chatId,
         'Tidak ada order yang perlu update LME PT2.\n\n' +
-        '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
+        '✅ Semua order yang pernah "Not Ready" atau yang "Not Ready" saat ini sudah diupdate atau belum ada laporan jaringan not ready.'
       );
       return;
     }
 
     let message = '📝 PILIH ORDER UNTUK UPDATE LME PT2\n\n';
-    message += '📋 Order yang perlu update LME PT2 (survey jaringan: Not Ready):\n';
+    message += '📋 Order yang perlu update LME PT2 (termasuk yang pernah Not Ready):\n';
     message += '⏰ = Menunggu update dari HD\n\n';
 
     const keyboard = [];
-    
-    progressData.forEach(progress => {
-      console.log('🔍 Processing progress:', progress);
-      if (progress.orders) {
-        const order = progress.orders;
-        const orderInfo = `${order.order_id} - ${order.customer_name} (${order.sto})`;
-        
-        // Extract timestamp from status string like "Not Ready - 26/09/2025, 11.34.56"
-        const statusString = progress.survey_jaringan?.status || '';
-        const timestampMatch = statusString.match(/Not Ready - (.+)/);
-        const surveyTimestamp = timestampMatch ? timestampMatch[1] : 'Tidak ada';
-        const surveyNote = progress.survey_jaringan?.note || 'Tidak ada catatan';
-        
-        message += `⏰ ${orderInfo}\n`;
-        message += `   📅 Survey Jaringan: ${surveyTimestamp}\n`;
-        message += `   📝 Catatan: ${surveyNote}\n\n`;
-        
-        keyboard.push([{
-          text: `📝 Update LME PT2 - ${order.order_id}`,
-          callback_data: `lme_pt2_order_${order.order_id}`
-        }]);
-      }
+    items.forEach(item => {
+      const orderInfo = `${item.order_id} - ${item.customer_name} (${item.sto})`;
+      message += `⏰ ${orderInfo}\n`;
+      message += `   📅 Survey Jaringan: ${item.surveyTimestamp}\n`;
+      message += `   📝 Catatan: ${item.surveyNote}\n\n`;
+      keyboard.push([
+        {
+          text: `📝 Update LME PT2 - ${item.order_id}`,
+          callback_data: `lme_pt2_order_${item.order_id}`
+        }
+      ]);
     });
 
     keyboard.push([{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }]);
 
     console.log('📤 Sending message with', keyboard.length - 1, 'orders');
-    bot.sendMessage(chatId, message, {
+    bot.sendMessage(chatId, decodeUnicodeEscapes(message), {
       parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: keyboard
