@@ -1891,7 +1891,7 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    console.log('🔍 Fetching LME PT2 orders from progress_new and orders...');
+    console.log('🔍 Fetching LME PT2 orders from progress_new and orders (2-step)...');
 
     // Helper: decode literal unicode escapes to native characters
     function decodeUnicodeEscapes(text) {
@@ -1919,24 +1919,11 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
       return `${dd}/${mm}/${yyyy}, ${HH}.${MM}.${SS}`;
     }
 
-    // Ambil order dari tabel progress_new yang survey_jaringan statusnya mengandung 'Not Ready'
+    // Langkah 1: ambil progress dengan status jaringan mengandung 'Not Ready' tanpa bergantung relasi FK
     const { data: progressData, error } = await supabase
       .from('progress_new')
-      .select(`
-        order_id,
-        survey_jaringan,
-        orders (
-          order_id,
-          customer_name,
-          sto,
-          created_at,
-          lme_pt2_end,
-          lme_pt2_start
-        )
-      `)
-      .like('survey_jaringan->>status', 'Not Ready%')
-      .is('orders.lme_pt2_end', null)
-      .order('created_at', { ascending: true });
+      .select('order_id, survey_jaringan')
+      .ilike('survey_jaringan->>status', '%Not Ready%');
 
     console.log('📊 Query result (progress_new Not Ready):', { 
       error: error, 
@@ -1946,6 +1933,30 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
 
     if (error) {
       console.error('Error fetching orders for LME PT2:', error);
+      bot.sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil data order.');
+      return;
+    }
+
+    // Langkah 2: ambil detail orders dari daftar progress yang belum memiliki lme_pt2_end
+    const orderIdsRaw = Array.isArray(progressData) ? progressData.map(p => p.order_id).filter(Boolean) : [];
+    const orderIds = Array.from(new Set(orderIdsRaw.map(id => String(id).trim())));
+    console.log('📊 orderIds from progress_new:', orderIds);
+
+    const { data: ordersFromProgress, error: orderFromProgressError } = await supabase
+      .from('orders')
+      .select('order_id, customer_name, sto, created_at, lme_pt2_end, lme_pt2_start')
+      .in('order_id', orderIds.length ? orderIds : ['__none__'])
+      .is('lme_pt2_end', null)
+      .order('created_at', { ascending: true });
+
+    console.log('📊 Query result (orders from progress with no end):', {
+      error: orderFromProgressError,
+      dataCount: ordersFromProgress?.length || 0,
+      data: ordersFromProgress
+    });
+
+    if (orderFromProgressError) {
+      console.error('Error fetching orders from progress list:', orderFromProgressError);
       bot.sendMessage(chatId, '❌ Terjadi kesalahan saat mengambil data order.');
       return;
     }
@@ -1971,9 +1982,12 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
     }
 
     const itemsMap = new Map();
-    (progressData || []).forEach(progress => {
-      if (!progress.orders) return;
-      const order = progress.orders;
+    // Gabungkan hasil dari ordersFromProgress (yang berasal dari progress Not Ready)
+    const surveyByOrderId = new Map();
+    (progressData || []).forEach(p => surveyByOrderId.set(p.order_id, p.survey_jaringan || null));
+
+    (ordersFromProgress || []).forEach(order => {
+      const progress = { survey_jaringan: surveyByOrderId.get(order.order_id) };
       const statusString = progress.survey_jaringan?.status || '';
       const tsFromField = progress.survey_jaringan?.timestamp ? formatWIB(progress.survey_jaringan.timestamp) : null;
       const tsFromStatus = (() => {
@@ -2005,6 +2019,7 @@ async function showLMEPT2OrderSelection(chatId, telegramId) {
     });
 
     const items = Array.from(itemsMap.values());
+    console.log('📊 Final LME PT2 items count:', items.length);
 
     if (!items || items.length === 0) {
       console.log('📋 No orders found for LME PT2 selection');

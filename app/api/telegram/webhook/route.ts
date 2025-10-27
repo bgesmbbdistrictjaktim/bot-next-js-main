@@ -1494,7 +1494,7 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
 
 // Seleksi order untuk LME PT2: gabungkan yang Not Ready saat ini dan yang pernah Not Ready (punya lme_pt2_start) dan belum end
 async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId: string) {
-  // 1) Ambil progress dengan status Not Ready saat ini
+  // 1) Ambil progress dengan status Not Ready saat ini (tanpa bergantung FK)
   const { data: progresses, error: progErr } = await supabaseAdmin
     .from('progress_new')
     .select('order_id, survey_jaringan')
@@ -1507,6 +1507,8 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
 
   const orderIdsRaw = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
   const orderIds = Array.from(new Set(orderIdsRaw.map((id: any) => String(id).trim())))
+  console.log('[LME PT2] progress_new Not Ready count:', progresses?.length || 0)
+  console.log('[LME PT2] orderIds from progress_new:', orderIds)
 
   // 2) Ambil detail order dari list di atas yang belum memiliki LME PT2 end
   const { data: ordersFromProgress, error: orderErr } = await supabaseAdmin
@@ -1576,6 +1578,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   }
 
   const items = Array.from(itemsMap.values())
+  console.log('[LME PT2] final items count:', items.length)
 
   if (!items || items.length === 0) {
     await client.sendMessage(chatId,
