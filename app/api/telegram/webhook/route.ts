@@ -1492,9 +1492,9 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
   });
 }
 
-// Seleksi order untuk LME PT2 berdasarkan progress_new survey_jaringan Not Ready
+// Seleksi order untuk LME PT2: gabungkan yang Not Ready saat ini dan yang pernah Not Ready (punya lme_pt2_start) dan belum end
 async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId: string) {
-  // Ambil progress dengan status Not Ready
+  // 1) Ambil progress dengan status Not Ready saat ini
   const { data: progresses, error: progErr } = await supabaseAdmin
     .from('progress_new')
     .select('order_id, survey_jaringan')
@@ -1507,19 +1507,12 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
 
   const orderIdsRaw = Array.isArray(progresses) ? progresses.map((p: any) => p.order_id).filter(Boolean) : []
   const orderIds = Array.from(new Set(orderIdsRaw.map((id: any) => String(id).trim())))
-  if (orderIds.length === 0) {
-    await client.sendMessage(chatId,
-      'Tidak ada order yang perlu update LME PT2.\n\n' +
-      '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
-    )
-    return
-  }
 
-  // Ambil detail order yang belum memiliki LME PT2 end
-  const { data: orders, error: orderErr } = await supabaseAdmin
+  // 2) Ambil detail order dari list di atas yang belum memiliki LME PT2 end
+  const { data: ordersFromProgress, error: orderErr } = await supabaseAdmin
     .from('orders')
-    .select('order_id, customer_name, sto, created_at, lme_pt2_end')
-    .in('order_id', orderIds)
+    .select('order_id, customer_name, sto, created_at, lme_pt2_end, lme_pt2_start')
+    .in('order_id', orderIds.length ? orderIds : ['__none__']) // hindari error IN empty
     .is('lme_pt2_end', null)
     .order('created_at', { ascending: true })
 
@@ -1528,51 +1521,86 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
     return
   }
 
+  // 3) Tambah sumber kedua: orders yang pernah Not Ready (punya lme_pt2_start) tapi belum lme_pt2_end
+  const { data: ordersWithStart, error: startErr } = await supabaseAdmin
+    .from('orders')
+    .select('order_id, customer_name, sto, created_at, lme_pt2_start, lme_pt2_end')
+    .is('lme_pt2_end', null)
+    .not('lme_pt2_start', 'is', null)
+    .order('created_at', { ascending: true })
+
+  if (startErr) {
+    await (client as any).sendMessage(chatId, `❌ Gagal mengambil data order (riwayat Not Ready): ${startErr.message}`)
+    return
+  }
+
+  // 4) Gabungkan dua sumber, unik per order_id
   const progressByOrder = new Map<string, any>()
   for (const p of (progresses || [])) progressByOrder.set(p.order_id, p.survey_jaringan)
 
-  const items = (orders || []).map((o: any) => ({
-    order_id: o.order_id,
-    customer_name: o.customer_name,
-    sto: o.sto,
-    survey: progressByOrder.get(o.order_id)
-  }))
+  const itemsMap = new Map<string, { order_id: string, customer_name: string, sto: string, surveyTime: string, surveyTech: string }>()
+
+  for (const o of (ordersFromProgress || [])) {
+    const survey = progressByOrder.get(o.order_id)
+    let surveyTime = survey?.timestamp ? formatIndonesianDateTime(survey.timestamp) : '-'
+    let surveyTech = survey?.technician || '-'
+    // Fallback parsing format lama: "Not Ready - dd/mm/yyyy, HH.MM.SS - nama"
+    if (!survey?.timestamp && typeof survey?.status === 'string' && String(survey.status).startsWith('Not Ready')) {
+      const parts = String(survey.status).split(' - ')
+      if (parts.length >= 2) surveyTime = parts[1]
+      if (parts.length >= 3) surveyTech = parts[2]
+    }
+    // Fallback ke lme_pt2_start bila tidak ada waktu jelas
+    if (!surveyTime || surveyTime === '-') {
+      surveyTime = o.lme_pt2_start ? formatIndonesianDateTime(o.lme_pt2_start) : '-'
+    }
+    itemsMap.set(o.order_id, {
+      order_id: o.order_id,
+      customer_name: o.customer_name,
+      sto: o.sto,
+      surveyTime,
+      surveyTech
+    })
+  }
+
+  for (const o of (ordersWithStart || [])) {
+    if (itemsMap.has(o.order_id)) continue
+    const surveyTime = o.lme_pt2_start ? formatIndonesianDateTime(o.lme_pt2_start) : '-'
+    itemsMap.set(o.order_id, {
+      order_id: o.order_id,
+      customer_name: o.customer_name,
+      sto: o.sto,
+      surveyTime,
+      surveyTech: '-'
+    })
+  }
+
+  const items = Array.from(itemsMap.values())
 
   if (!items || items.length === 0) {
     await client.sendMessage(chatId,
       'Tidak ada order yang perlu update LME PT2.\n\n' +
-      '✅ Semua order dengan survey jaringan "Not Ready" telah diupdate atau belum ada teknisi yang melaporkan jaringan not ready.'
+      '✅ Semua order yang pernah "Not Ready" atau yang "Not Ready" saat ini sudah diupdate atau belum ada laporan jaringan not ready.'
     )
     return
   }
 
   let message = '📝 PILIH ORDER UNTUK UPDATE LME PT2\n\n'
-  message += '📋 Order yang perlu update LME PT2 (survey jaringan: Not Ready):\n\n'
+  message += '📋 Order yang perlu update LME PT2 (termasuk yang pernah Not Ready):\n\n'
 
   const keyboard: any[] = []
 
   items.forEach((i: any) => {
     const orderInfo = `${i.order_id} - ${i.customer_name} (${i.sto})`
-    let surveyTime = i.survey?.timestamp ? formatIndonesianDateTime(i.survey.timestamp) : '-'
-    let surveyTech = i.survey?.technician || '-'
-
-    // Fallback parsing format lama: "Not Ready - dd/mm/yyyy, HH.MM.SS - nama"
-    if (!i.survey?.timestamp && typeof i.survey?.status === 'string' && i.survey.status.startsWith('Not Ready')) {
-      const parts = String(i.survey.status).split(' - ')
-      if (parts.length >= 2) surveyTime = parts[1]
-      if (parts.length >= 3) surveyTech = parts[2]
-    }
-
     message += `⏰ ${orderInfo}\n`
-    message += `   📅 Waktu: ${surveyTime}\n`
-    message += `   👷 Teknisi: ${surveyTech}\n\n`
-
+    message += `   📅 Waktu: ${i.surveyTime}\n`
+    message += `   👷 Teknisi: ${i.surveyTech}\n\n`
     keyboard.push([{ text: `📝 Update LME PT2 - ${i.order_id}`, callback_data: `lme_pt2_order_${i.order_id}` }])
   })
 
   keyboard.push([{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }])
 
-  await client.sendMessage(chatId, message, {
+  await client.sendMessage(chatId, decodeUnicodeEscapes(message), {
     reply_markup: { inline_keyboard: keyboard }
   })
 }
