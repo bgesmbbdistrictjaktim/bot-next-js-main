@@ -1968,8 +1968,8 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
       .eq('order_id', session.orderId)
       .maybeSingle();
     const prevStage = row?.[session.stage] || {};
-    const newStatus = prevStage?.status === 'Selesai' ? 'Selesai' : 'In Progress';
-    const newTimestamp = prevStage?.timestamp || jakartaTimestamp;
+    const newStatus = 'Selesai';
+    const newTimestamp = jakartaTimestamp;
     const updatePayload: any = {
       order_id: session.orderId,
       [session.stage]: {
