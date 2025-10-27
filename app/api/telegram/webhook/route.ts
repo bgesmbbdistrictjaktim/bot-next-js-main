@@ -12,6 +12,7 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
 import { getReplyMenuKeyboard } from '@/lib/botMenus'
+import { uploadPhotoToSupabase, downloadPhotoFromTelegram } from '@/lib/fileStorage'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -203,7 +204,7 @@ const progressSpamGuard = new Map<number, number>()
 // Session create order (inline flow)
 const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
 const progressUpdateSessions = new Map<number, { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }>()
-const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string, nextIndex?: number, processedPhotoIds?: Set<string>, processing?: boolean }>()
+const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string, waitingInput?: 'odp_name' | 'ont_sn', nextIndex?: number, processedPhotoIds?: Set<string>, processing?: boolean }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jt','New install','PDA']
@@ -423,37 +424,33 @@ export async function POST(req: NextRequest) {
 
       const fileId: string = update.message.photo[update.message.photo.length - 1].file_id
       const fileUrl = await getTelegramFileUrl(token, fileId)
-      const fileResp = await axios.get(fileUrl, { responseType: 'arraybuffer' })
-      const buffer = Buffer.from(fileResp.data)
+      const buffer = await downloadPhotoFromTelegram(fileUrl)
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
       const filename = `${orderId}-Evidence-${nextField.field}-${timestamp}.jpg`
 
-      // Upload to Supabase Storage
-      const { data: upload, error: uploadError } = await supabaseAdmin.storage
-        .from('evidence-photos')
-        .upload(filename, buffer, { contentType: 'image/jpeg', upsert: true })
-      if (uploadError) {
+      // Upload via shared util and save to evidence table
+      try {
+        const publicUrl = await uploadPhotoToSupabase(buffer, filename, 'image/jpeg')
+        const updatePayload: any = {}
+        updatePayload[nextField.field] = publicUrl
+        updatePayload.uploaded_at = nowJakartaWithOffset()
+        const { data: evPhoto } = await supabaseAdmin
+          .from('evidence')
+          .select('order_id')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        if (evPhoto) {
+          await supabaseAdmin.from('evidence').update(updatePayload).eq('order_id', orderId)
+        } else {
+          await supabaseAdmin.from('evidence').insert({ order_id: orderId, ...updatePayload })
+        }
+      } catch (uploadError) {
         if (sess) {
           sess.processing = false
           evidenceUploadSessions.set(chatId, sess)
         }
         await (client as any).sendMessage(chatId, '❌ Gagal mengupload foto evidence.')
         return NextResponse.json({ ok: true })
-      }
-
-      // Save URL to evidence table
-      const { data: publicUrlData } = supabaseAdmin.storage.from('evidence-photos').getPublicUrl(filename)
-      const updatePayload: any = {}
-      updatePayload[nextField.field] = publicUrlData.publicUrl
-      const { data: evPhoto } = await supabaseAdmin
-        .from('evidence')
-        .select('order_id')
-        .eq('order_id', orderId)
-        .maybeSingle()
-      if (evPhoto) {
-        await supabaseAdmin.from('evidence').update(updatePayload).eq('order_id', orderId)
-      } else {
-        await supabaseAdmin.from('evidence').insert({ order_id: orderId, ...updatePayload })
       }
 
       // Tandai processed & advance pointer (session-first, fallback DB)
@@ -503,6 +500,45 @@ export async function POST(req: NextRequest) {
 
     // 0.5) Handle plain text input for sessions (Create Order & Progress Notes)
     if (update?.message?.text) {
+      // Handle evidence text input (ODP name / SN ONT)
+      const evSess = evidenceUploadSessions.get(chatId)
+      if (evSess && evSess.type === 'upload_evidence') {
+        const t = (update.message.text || '').trim()
+        if (evSess.waitingInput === 'odp_name') {
+          await supabaseAdmin
+            .from('evidence')
+            .upsert({ order_id: evSess.orderId, odp_name: t }, { onConflict: 'order_id' })
+
+          evSess.waitingInput = 'ont_sn'
+          evidenceUploadSessions.set(chatId, evSess)
+          await (client as any).sendMessage(chatId, `✅ ODP: ${t}\n\n2️⃣ Silakan masukkan SN ONT untuk ORDER ${evSess.orderId}:`, { reply_markup: { force_reply: true } })
+          return NextResponse.json({ ok: true })
+        }
+        if (evSess.waitingInput === 'ont_sn') {
+          await supabaseAdmin
+            .from('evidence')
+            .upsert({ order_id: evSess.orderId, ont_sn: (t || '-') }, { onConflict: 'order_id' })
+
+          // Ready to start photo uploads
+          evSess.waitingInput = undefined
+          evSess.nextIndex = 1
+          evSess.processing = false
+          evSess.processedPhotoIds = new Set<string>()
+          evidenceUploadSessions.set(chatId, evSess)
+
+          const items = PHOTO_TYPES.map((p, i) => `${i + 1}. ${p.label}`).join('\n')
+          await (client as any).sendMessage(
+            chatId,
+            `📸 Instruksi Upload Evidence\n\n` +
+            `🆔 ORDER ${evSess.orderId}\n` +
+            `📌 ODP: ${t}\n\n` +
+            `Kirim 7 foto sesuai urutan berikut dengan membalas pesan ini:\n\n` +
+            `${items}\n\n` +
+            `UPLOAD_FOTO_ORDER ${evSess.orderId}`
+          )
+          return NextResponse.json({ ok: true })
+        }
+      }
       // Handle progress note session first
       const prog = progressUpdateSessions.get(chatId)
       if (prog && prog.type === 'update_progress') {
@@ -738,6 +774,8 @@ export async function POST(req: NextRequest) {
           .select('order_id, customer_name, customer_address')
           .eq('order_id', orderId)
           .maybeSingle()
+        // Initialize evidence upload session to collect ODP then SN ONT
+        evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId, waitingInput: 'odp_name', processing: false })
         await (client as any).sendMessage(chatId, `📸 Upload Evidence\n\n🆔 Order ID: ${orderId}\n👤 Customer: ${order?.customer_name || '-'}\n📍 Alamat: ${order?.customer_address || '-'}\n\nMasukkan nama ODP untuk ORDER ${orderId}:`, {
           reply_markup: { force_reply: true }
         })
