@@ -417,7 +417,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (!nextField) {
-        await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
+        await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.', getReplyMenuKeyboard('Teknisi'))
         // Close order
         await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
         evidenceUploadSessions.delete(chatId)
@@ -473,7 +473,7 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
           evidenceUploadSessions.delete(chatId)
           const finalMsg = `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).\n\nSEMUA EVIDENCE BERHASIL DIUPLOAD`
-          await (client as any).sendMessage(chatId, finalMsg)
+          await (client as any).sendMessage(chatId, finalMsg, getReplyMenuKeyboard('Teknisi'))
           return NextResponse.json({ ok: true })
         }
 
@@ -496,12 +496,12 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
           evidenceUploadSessions.delete(chatId)
           const finalMsg = `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).\n\nSEMUA EVIDENCE BERHASIL DIUPLOAD`
-          await (client as any).sendMessage(chatId, finalMsg)
+          await (client as any).sendMessage(chatId, finalMsg, getReplyMenuKeyboard('Teknisi'))
           return NextResponse.json({ ok: true })
         }
       }
 
-      await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+      await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`, getReplyMenuKeyboard('Teknisi'))
       await (client as any).sendMessage(chatId, `👆 Balas pesan instruksi evidence dengan foto berikutnya.`)
       return NextResponse.json({ ok: true })
     }
@@ -1476,10 +1476,36 @@ function formatIndonesianDateTime(dateIso?: string | null) {
 }
 
 function formatReadableDuration(hours: number) {
-  if (!isFinite(hours) || hours < 0) return '-';
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return `${h} jam ${m} menit`;
+  if (!isFinite(hours) || hours < 0) return '-'
+  // Konversi ke detik untuk presisi dan aturan <1 menit tampilkan detik
+  const totalSeconds = Math.round(hours * 3600)
+  if (totalSeconds < 60) {
+    const secs = Math.max(totalSeconds, 0)
+    return `${secs} detik`
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60)
+  if (totalMinutes < 60) {
+    // Untuk < 1 jam, tampilkan menit saja
+    return `${totalMinutes} menit`
+  }
+
+  if (totalMinutes < 1440) {
+    // Untuk < 24 jam, tampilkan jam dan menit
+    const hrs = Math.floor(totalMinutes / 60)
+    const mins = totalMinutes % 60
+    return mins === 0 ? `${hrs} jam` : `${hrs} jam ${mins} menit`
+  }
+
+  // Untuk >= 24 jam, konversi jadi hari, jam, menit
+  const days = Math.floor(totalMinutes / 1440)
+  const remainingMinutes = totalMinutes % 1440
+  const hrs = Math.floor(remainingMinutes / 60)
+  const mins = remainingMinutes % 60
+  let result = `${days} hari`
+  if (hrs > 0) result += ` ${hrs} jam`
+  if (mins > 0) result += ` ${mins} menit`
+  return result
 }
 
 async function getUserName(telegramId: string) {
@@ -1796,8 +1822,6 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
     `📞 Telepon: ${order?.contact || 'N/A'}\n` +
     `🔧 Layanan: ${order?.service_type || '-'}\n` +
     `🏢 STO: ${order?.sto || '-'}\n\n` +
-    'Anda dapat melanjutkan pekerjaan instalasi sekarang.\n' +
-    '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
     'Gunakan menu "📝 Update Progress" untuk mencatat perkembangan pekerjaan.';
 
   const ids = Array.from(recipients);
@@ -1900,14 +1924,9 @@ async function handleLMEPT2Update(client: any, chatId: number, telegramId: strin
     }
     const hdName = await getUserName(telegramId);
     const jakartaTimestamp = nowJakartaWithOffset();
-    // Setelah PT2 selesai, mulai TTI comply dan set deadline 3x24 dari waktu PT2 end
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const pt2End = new Date(String(jakartaTimestamp).replace(' ', 'T'));
-    const deadlineTime = new Date(pt2End.getTime() + (72 * 60 * 60 * 1000));
-    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', tti_comply_status: 'In Progress', tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
+      .update({ lme_pt2_end: jakartaTimestamp, status: 'Pending', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order LME PT2:', updateError);
@@ -1919,8 +1938,6 @@ async function handleLMEPT2Update(client: any, chatId: number, telegramId: strin
       `📋 Order: ${order.order_id}\n` +
       `👤 Customer Name: ${order.customer_name}\n` +
       `🕐 LME PT2 Update Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
-      `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
-      `📊 TTI Status: In Progress\n` +
       `👤 Updated by: ${hdName}`
     );
     try {
@@ -1950,9 +1967,13 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
     const pad = (n: number) => String(n).padStart(2, '0');
     const jakartaTimestamp = `${jakartaTime.getFullYear()}-${pad(jakartaTime.getMonth() + 1)}-${pad(jakartaTime.getDate())} ${pad(jakartaTime.getHours())}:${pad(jakartaTime.getMinutes())}:${pad(jakartaTime.getSeconds())}+07:00`;
+    // Set TTI In Progress dan deadline 3x24 jam dari waktu SOD
+    const sodDate = new Date(String(jakartaTimestamp).replace(' ', 'T'));
+    const deadlineTime = new Date(sodDate.getTime() + (72 * 60 * 60 * 1000));
+    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, updated_at: nowJakartaWithOffset() })
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_status: 'In Progress', tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
@@ -1964,10 +1985,11 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
       `📋 Order: ${order.order_id}\n` +
       `👤 Customer Name: ${order.customer_name}\n` +
       `🕐 SOD Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
-      `📊 TTI Status: Pending (akan dimulai setelah PT2 selesai)\n` +
+      `📊 TTI Status: In Progress\n` +
+      `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
       `👤 Updated by: ${hdName}`
     );
-    await startTTIComplyFromSOD(orderId, jakartaTimestamp);
+    // TTI sudah berjalan dari SOD, tidak perlu pemanggilan tambahan
   } catch (error) {
     console.error('Error in handleSODUpdate:', error);
     await client.sendMessage(chatId, '❌ Terjadi kesalahan saat update SOD.');
