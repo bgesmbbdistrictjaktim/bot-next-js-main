@@ -144,10 +144,10 @@ async function formatOrderDetail(order: any, evidence?: any, createdByName?: str
     const tech = data?.technician
     const note = data?.note
     let line = `• ${label}: ${emoji} ${st || '-'}`
+    if (note) { line += ` (${note})` }
     if (time && tech) { line += ` - ${time} - ${tech}` }
     else if (time) { line += ` - ${time}` }
     else if (tech) { line += ` - ${tech}` }
-    if (note) { line += ` (${note})` }
     return line
   }
   lines.push(stageLine('Survey Jaringan', progress?.survey_jaringan))
@@ -976,7 +976,7 @@ export async function POST(req: NextRequest) {
               await sendOrderCreatedSuccess(client as any, chatId, payload, techName)
               // Notifikasi teknisi
               if (tech?.telegram_id) {
-                const notif = '📢 Order baru ditugaskan kepada Anda\n\n' +
+                const notif = ' Order baru ditugaskan kepada Anda\n\n' +
                   `🆔 ${payload.order_id} - ${payload.customer_name}\n` +
                   `📍 ${payload.customer_address}\n` +
                   `🏢 STO: ${payload.sto}\n` +
@@ -1855,7 +1855,9 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
       const emoji = hasStatus ? getProgressStatusEmoji(statusText) : '⚪';
       const time = data?.timestamp ? formatIndonesianDateTime(data.timestamp) : undefined;
       const tech = data?.technician;
+      const note = data?.note;
       let line = `• ${label}: ${emoji} ${statusText}`;
+      if (note) { line += ` (${note})`; }
       if (time && tech) {
         line += ` - ${time} - ${tech}`;
       } else if (time) {
