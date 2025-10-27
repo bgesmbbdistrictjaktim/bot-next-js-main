@@ -8,7 +8,7 @@ import { showWelcomeMessage } from '@/lib/botHandlers/welcome'
 import { showMyOrders } from '@/lib/botHandlers/orders'
 import { showProgressMenu } from '@/lib/botHandlers/progress'
 import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
-import { getUserRole, getStatusEmoji, getProgressStatusEmoji } from '@/lib/botUtils'
+import { getUserRole, getStatusEmoji, getProgressStatusEmoji, formatAssignmentSimple } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
@@ -1091,14 +1091,10 @@ export async function POST(req: NextRequest) {
                 .from('users').select('name, telegram_id').eq('id', techId).maybeSingle()
               const techName = tech?.name || '-' 
               await sendOrderCreatedSuccess(client as any, chatId, payload, techName)
-              // Notifikasi teknisi
+              // Notifikasi teknisi (format baru konsisten)
               if (tech?.telegram_id) {
-                const notif = ' Order baru ditugaskan kepada Anda\n\n' +
-                  `🆔 ${payload.order_id} - ${payload.customer_name}\n` +
-                  `📍 ${payload.customer_address}\n` +
-                  `🏢 STO: ${payload.sto}\n` +
-                  `📦 ${payload.transaction_type} | ${payload.service_type}`
-                await (client as any).sendMessage(Number(tech.telegram_id), notif)
+                const techMsg = formatAssignmentSimple(payload, { includeSecondaryHeader: false })
+                await (client as any).sendMessage(Number(tech.telegram_id), techMsg)
               }
               createOrderSessions.delete(chatId)
             }
