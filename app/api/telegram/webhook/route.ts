@@ -1754,48 +1754,39 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
     .eq('order_id', orderId)
     .maybeSingle();
 
-  let targetTelegramId: string | null = null;
+  const recipients = new Set<string>();
 
-  // 1) Prioritas: teknisi yang diassign langsung pada orders (users.id)
+  // 1) Prioritas: teknisi yang diassign langsung pada orders (users.id -> telegram_id)
   if (order?.assigned_technician) {
     const { data: tech } = await supabaseAdmin
       .from('users')
-      .select('name, telegram_id')
+      .select('telegram_id')
       .eq('id', order.assigned_technician)
       .maybeSingle();
     if (tech?.telegram_id) {
-      targetTelegramId = String(tech.telegram_id);
+      recipients.add(String(tech.telegram_id));
     }
   }
 
-  // 2) Fallback: cari teknisi dari penugasan stage bila belum ada direct assignment
-  if (!targetTelegramId) {
-    const { data: assignments } = await supabaseAdmin
-      .from('order_stage_assignments')
-      .select('assigned_technician, stage')
-      .eq('order_id', orderId);
-
-    if (assignments && assignments.length) {
-      const preferredStages = ['Instalasi', 'Penarikan', 'Survey', 'P2P', 'Evidence'];
-      let found: string | undefined;
-      for (const stage of preferredStages) {
-        const a = assignments.find((x: any) => x.stage === stage && x.assigned_technician);
-        if (a) {
-          found = a.assigned_technician;
-          break;
-        }
-      }
-      if (!found) {
-        const anyAss = assignments.find((x: any) => x.assigned_technician);
-        found = anyAss?.assigned_technician;
-      }
-      if (found) {
-        targetTelegramId = String(found);
-      }
+  // 2) Tambahkan semua teknisi yang diassign per stage (berisi telegram_id)
+  const { data: assignments } = await supabaseAdmin
+    .from('order_stage_assignments')
+    .select('assigned_technician, stage')
+    .eq('order_id', orderId);
+  if (assignments && assignments.length) {
+    // Prioritaskan stage utama terlebih dahulu, kemudian tambahkan sisanya
+    const preferredStages = ['Instalasi', 'Penarikan', 'Survey', 'P2P', 'Evidence'];
+    for (const stage of preferredStages) {
+      const a = assignments.find((x: any) => x.stage === stage && x.assigned_technician);
+      if (a?.assigned_technician) recipients.add(String(a.assigned_technician));
+    }
+    // Tambahkan semua assignment lain yang belum masuk
+    for (const a of assignments) {
+      if (a?.assigned_technician) recipients.add(String(a.assigned_technician));
     }
   }
 
-  if (!targetTelegramId) return;
+  if (recipients.size === 0) return;
 
   const message = 'Notifikasi LME PT2 Ready\n\n' +
     '✅ Jaringan sudah siap! HD telah mengupdate status LME PT2.\n\n' +
@@ -1809,7 +1800,15 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
     '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
     'Gunakan menu "📝 Update Progress" untuk mencatat perkembangan pekerjaan.';
 
-  await client.sendMessage(Number(targetTelegramId), decodeUnicodeEscapes(message));
+  const ids = Array.from(recipients);
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    try {
+      await client.sendMessage(Number(id), decodeUnicodeEscapes(message));
+    } catch (e) {
+      console.error('Failed to notify technician LME PT2 ready:', e);
+    }
+  }
 }
 
 async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp: string) {
