@@ -88,13 +88,13 @@ function formatWIB(dateIso?: string) {
   }
 }
 
-// Formatter detail sesuai format "Cek Order"
-function formatOrderDetail(order: any, evidence?: any, createdByName?: string, assignedTechName?: string, assignedAtIso?: string, assignedTechRole?: string) {
+// Formatter detail sesuai format contoh pengguna, lengkap dengan TTI, progress, assignment, dan evidence
+async function formatOrderDetail(order: any, evidence?: any, createdByName?: string, assignedTechName?: string, assignedAtIso?: string, assignedTechRole?: string) {
   const lines: string[] = []
   lines.push('📋 DETAIL LENGKAP ORDER')
   lines.push('')
   lines.push(`🆔 Order ID: ${order.order_id || order.id}`)
-  lines.push(`⏳ Status: ${order.status || '-'}`)
+  lines.push(`🔒 Status: ${order.status || '-'}`)
   lines.push(`📅 Dibuat: ${formatWIB(order.created_at)}`)
   lines.push(`👤 Dibuat oleh: ${createdByName || '-'}`)
   lines.push(`📝 Terakhir Update: ${formatWIB(order.updated_at)}`)
@@ -119,18 +119,78 @@ function formatOrderDetail(order: any, evidence?: any, createdByName?: string, a
   }
   lines.push('')
   lines.push('⏰ TIMELINE PEKERJAAN')
-  lines.push(`• SOD Time: ${order.sod_time ? formatWIB(order.sod_time) : 'Belum diset'}`)
-  lines.push(`• E2E Time: ${order.e2e_time ? formatWIB(order.e2e_time) : 'Belum diset'}`)
+  lines.push(`• SOD Time: ${order.sod_timestamp ? formatWIB(order.sod_timestamp) : 'Belum diset'}`)
+  lines.push(`• E2E Time: ${order.e2e_timestamp ? formatWIB(order.e2e_timestamp) : 'Belum diset'}`)
   lines.push(`• LME PT2 Start: ${order.lme_pt2_start ? formatWIB(order.lme_pt2_start) : 'Belum diset'}`)
   lines.push(`• LME PT2 End: ${order.lme_pt2_end ? formatWIB(order.lme_pt2_end) : 'Belum diset'}`)
-
-  // Tambahan ringkas evidence jika ingin ditampilkan (opsional)
-  if (evidence) {
-    const count = ['photo_sn_ont','photo_technician_customer','photo_customer_house','photo_odp_front','photo_odp_inside','photo_label_dc','photo_test_result'].filter(k => evidence[k]).length
-    if (count > 0) {
-      lines.push('')
-      lines.push(`📸 Evidence: ${count}/7 foto`)
+  lines.push('')
+  // 🎯 TTI COMPLY
+  lines.push('🎯 TTI COMPLY')
+  lines.push(`• Deadline: ${order.tti_comply_deadline ? formatWIB(order.tti_comply_deadline) : '-'}`)
+  lines.push(`• Status: ${order.tti_comply_status || '-'}`)
+  lines.push(`• Durasi Aktual: ${order.tti_comply_actual_duration || '-'}`)
+  lines.push('')
+  // 📈 INFORMASI TRACK PROGRESS
+  const { data: progress } = await supabaseAdmin
+    .from('progress_new')
+    .select('*')
+    .eq('order_id', order.order_id)
+    .maybeSingle()
+  lines.push('📈 INFORMASI TRACK PROGRESS')
+  const stageLine = (label: string, data?: any) => {
+    const st = data?.status
+    const emoji = getProgressStatusEmoji(st || '')
+    const time = data?.timestamp ? formatIndonesianDateTime(data.timestamp) : undefined
+    const tech = data?.technician
+    const note = data?.note
+    let line = `• ${label}: ${emoji} ${st || '-'}`
+    if (time && tech) { line += ` - ${time} - ${tech}` }
+    else if (time) { line += ` - ${time}` }
+    else if (tech) { line += ` - ${tech}` }
+    if (note) { line += ` (${note})` }
+    return line
+  }
+  lines.push(stageLine('Survey Jaringan', progress?.survey_jaringan))
+  lines.push(stageLine('Penarikan Kabel', progress?.penarikan_kabel))
+  lines.push(stageLine('P2P', progress?.p2p))
+  lines.push(stageLine('Instalasi ONT', progress?.instalasi_ont))
+  lines.push('')
+  // 👥 ASSIGNMENT TEKNISI PER STAGE
+  lines.push('👥 ASSIGNMENT TEKNISI PER STAGE')
+  const { data: assignments } = await supabaseAdmin
+    .from('order_stage_assignments')
+    .select('stage, status, assigned_at, users!assigned_technician(name)')
+    .eq('order_id', order.order_id)
+  const assignmentMap: Record<string, any> = {}
+  ;(assignments || []).forEach(a => { assignmentMap[a.stage] = a })
+  const stageMapLabels: Record<string, string> = {
+    Survey: 'Survey',
+    Penarikan: 'Penarikan',
+    P2P: 'P2P',
+    Instalasi: 'Instalasi',
+    Evidence: 'Evidence',
+  }
+  const stagesOrder = ['Survey', 'Penarikan', 'P2P', 'Instalasi', 'Evidence']
+  for (const stg of stagesOrder) {
+    const a = assignmentMap[stg]
+    if (a && a.users?.name) {
+      const statusText = a.status || 'assigned'
+      lines.push(`• ${stageMapLabels[stg]}: ${statusText} - ${a.users.name}`)
+    } else {
+      lines.push(`• ${stageMapLabels[stg]}: Belum di-assign`)
     }
+  }
+  lines.push('')
+  // 📸 EVIDENCE UPLOADED
+  lines.push('📸 EVIDENCE UPLOADED')
+  if (evidence) {
+    lines.push(`• ODP Name: ${evidence.odp_name || '-'}`)
+    lines.push(`• ONT SN: ${evidence.ont_sn || '-'}`)
+    const totalPhotos = ['photo_sn_ont','photo_technician_customer','photo_customer_house','photo_odp_front','photo_odp_inside','photo_label_dc','photo_test_result'].filter(k => (evidence as any)[k]).length
+    lines.push(`• Foto terupload: ${totalPhotos}/7`)
+    lines.push(`• Upload terakhir: ${formatWIB(evidence.updated_at || order.updated_at)}`)
+  } else {
+    lines.push('• Belum ada evidence')
   }
   return lines.join('\n')
 }
@@ -561,7 +621,7 @@ export async function POST(req: NextRequest) {
             assignedTechRole = tech?.role || 'Teknisi'
             assignedAtIso = order.updated_at
           }
-          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
+          await (client as any).sendMessage(chatId, await formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole))
 
 
         }
@@ -587,7 +647,7 @@ export async function POST(req: NextRequest) {
             assignedAtIso = order.updated_at
           }
 
-          await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
+          await (client as any).sendMessage(chatId, await formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole))
           const role = await (getUserRole as any)(telegramId)
           const menuRole = role === 'HD' ? 'HD' : (role || 'Teknisi')
           await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(menuRole))
@@ -1058,7 +1118,7 @@ export async function POST(req: NextRequest) {
               assignedTechRole = tech?.role || 'Teknisi'
               assignedAtIso = order.updated_at
             }
-            await (client as any).sendMessage(chatId, `${formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole)}`)
+            await (client as any).sendMessage(chatId, await formatOrderDetail(order, evidence, createdByName, assignedTechName, assignedAtIso, assignedTechRole))
           const role = await (getUserRole as any)(telegramId)
           const menuRole = role === 'HD' ? 'HD' : (role || 'Teknisi')
           await (client as any).sendMessage(chatId, 'Pilih menu:', (getReplyMenuKeyboard as any)(menuRole))
