@@ -390,9 +390,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true })
       }
 
-      // Dedup berdasarkan file_unique_id
+      // Dedup berdasarkan file_unique_id — beri umpan balik agar tidak terkesan "diam"
       const uniqueId: string | undefined = update.message.photo[update.message.photo.length - 1]?.file_unique_id
       if (uniqueId && sess?.processedPhotoIds?.has(uniqueId)) {
+        if (sess) {
+          sess.processing = false
+          evidenceUploadSessions.set(chatId, sess)
+        }
+        await (client as any).sendMessage(chatId, '⚠️ Foto yang sama terdeteksi (duplikat). Silakan kirim foto berikutnya sesuai urutan.')
         return NextResponse.json({ ok: true })
       }
 
