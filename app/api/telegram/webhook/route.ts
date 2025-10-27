@@ -1952,7 +1952,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'In Progress', updated_at: nowJakartaWithOffset() })
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'in_progress', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
@@ -1965,6 +1965,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
       `👤 Customer Name: ${order.customer_name}\n` +
       `🕐 SOD Time: ${formatIndonesianDateTime(jakartaTimestamp)}\n` +
       `⏰ TTI Comply Deadline: ${formatIndonesianDateTime(deadlineTimestamp)}\n` +
+      `📊 TTI Status: In Progress\n` +
       `👤 Updated by: ${hdName}`
     );
     await startTTIComplyFromSOD(orderId, jakartaTimestamp);
