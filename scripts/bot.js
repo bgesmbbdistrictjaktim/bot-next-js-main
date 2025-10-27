@@ -5107,7 +5107,7 @@ async function notifyTechnicianLMEReady(orderId) {
     }
 
     const message = 
-      '🔔 *Notifikasi LME PT2 Ready*\n\n' +
+      '*Notifikasi LME PT2 Ready*\n\n' +
       '✅ Jaringan sudah siap! HD telah mengupdate status LME PT2.\n\n' +
       `📋 Order: ${order.customer_name}\n` +
       `🏠 Alamat: ${order.customer_address}\n` +
@@ -5407,7 +5407,7 @@ async function showDetailedOrderInfo(chatId, orderId) {
     
     // Progress Info from progress_new
     if (progressRecord) {
-      message += `📈 *INFORMASI TRACK PROGRESS*\n`;
+      message += `*INFORMASI TRACK PROGRESS*\n`;
       const progressStages = [
         { key: 'survey_jaringan', label: 'Survey Jaringan' },
         { key: 'penarikan_kabel', label: 'Penarikan Kabel' },

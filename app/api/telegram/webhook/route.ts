@@ -136,7 +136,7 @@ async function formatOrderDetail(order: any, evidence?: any, createdByName?: str
     .select('*')
     .eq('order_id', order.order_id)
     .maybeSingle()
-  lines.push('📈 INFORMASI TRACK PROGRESS')
+  lines.push('INFORMASI TRACK PROGRESS')
   const stageLine = (label: string, data?: any) => {
     const st = data?.status
     const emoji = getProgressStatusEmoji(st || '')
@@ -1630,7 +1630,7 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
 
   if (!targetTelegramId) return;
 
-  const message = '🔔 Notifikasi LME PT2 Ready\n\n' +
+  const message = 'Notifikasi LME PT2 Ready\n\n' +
     '✅ Jaringan sudah siap! HD telah mengupdate status LME PT2.\n\n' +
     `🆔 Order: ${order?.order_id || orderId}\n` +
     `👤 Customer Name: ${order?.customer_name || '-'}\n` +
@@ -1642,7 +1642,7 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
     '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
     'Gunakan menu "📝 Update Progress" untuk mencatat perkembangan pekerjaan.';
 
-  await client.sendMessage(Number(targetTelegramId), message);
+  await client.sendMessage(Number(targetTelegramId), decodeUnicodeEscapes(message));
 }
 
 async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp: string) {
@@ -1812,6 +1812,17 @@ async function startTTIComplyFromSOD(orderId: string, sodTimestamp: string) {
   }
 }
 
+function decodeUnicodeEscapes(text: string): string {
+  if (!text) return text;
+  try {
+    return text
+      .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_: string, code: string) => String.fromCodePoint(parseInt(code, 16)))
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+  } catch {
+    return text;
+  }
+}
+
 // ===== Progress Flow (mirrored from bot.js) =====
 async function showProgressStages(client: any, chatId: number, orderId: string) {
   try {
@@ -1839,19 +1850,18 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
     message += '📈 Progress Terakhir:\n';
 
     const stageLine = (label: string, data?: any) => {
-      const statusText = (data && data.status) ? data.status : 'undefined';
-      const emoji = getProgressStatusEmoji(statusText);
+      const hasStatus = !!(data && data.status);
+      const statusText = hasStatus ? data.status : '-';
+      const emoji = hasStatus ? getProgressStatusEmoji(statusText) : '⚪';
       const time = data?.timestamp ? formatIndonesianDateTime(data.timestamp) : undefined;
       const tech = data?.technician;
       let line = `• ${label}: ${emoji} ${statusText}`;
-      if (time || tech) {
-        if (time && tech) {
-          line += ` - ${time} - ${tech}`;
-        } else if (time && !tech) {
-          line += ` - ${time}`;
-        } else if (!time && tech) {
-          line += ` - ${tech}`;
-        }
+      if (time && tech) {
+        line += ` - ${time} - ${tech}`;
+      } else if (time) {
+        line += ` - ${time}`;
+      } else if (tech) {
+        line += ` - ${tech}`;
       }
       return line;
     };
@@ -1873,7 +1883,7 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
       ],
     };
 
-    await client.sendMessage(chatId, message, { reply_markup: keyboard });
+    await client.sendMessage(chatId, decodeUnicodeEscapes(message), { reply_markup: keyboard });
   } catch (err) {
     console.error('Error showProgressStages:', err);
     await client.sendMessage(chatId, '❌ Terjadi kesalahan saat membuka stage progress.');
