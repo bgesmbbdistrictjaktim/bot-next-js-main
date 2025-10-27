@@ -467,10 +467,10 @@ export async function POST(req: NextRequest) {
         const nextIdx = nextField.index + 1
         if (nextIdx > PHOTO_TYPES.length) {
           // All 7 done — close order and clear session
-          await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
           await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
           evidenceUploadSessions.delete(chatId)
-          await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+          const finalMsg = `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).\n\nSEMUA EVIDENCE BERHASIL DIUPLOAD`
+          await (client as any).sendMessage(chatId, finalMsg)
           return NextResponse.json({ ok: true })
         }
 
@@ -492,8 +492,8 @@ export async function POST(req: NextRequest) {
           // Completed by DB view — close order
           await supabaseAdmin.from('orders').update({ status: 'Closed' }).eq('order_id', orderId)
           evidenceUploadSessions.delete(chatId)
-          await (client as any).sendMessage(chatId, '✅ Semua 7 foto evidence sudah terupload.')
-          await (client as any).sendMessage(chatId, `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).`)
+          const finalMsg = `✅ ${nextField.label} berhasil diupload (${nextField.index}/7).\n\nSEMUA EVIDENCE BERHASIL DIUPLOAD`
+          await (client as any).sendMessage(chatId, finalMsg)
           return NextResponse.json({ ok: true })
         }
       }
@@ -555,12 +555,22 @@ export async function POST(req: NextRequest) {
           evSess.processedPhotoIds = new Set<string>()
           evidenceUploadSessions.set(chatId, evSess)
 
+          // Fetch ODP name to display together with SN ONT
+          const { data: evInfo } = await supabaseAdmin
+            .from('evidence')
+            .select('odp_name, ont_sn')
+            .eq('order_id', evSess.orderId)
+            .maybeSingle()
+          const odpName = evInfo?.odp_name || '-'
+          const snOnt = evInfo?.ont_sn || (t || '-')
+
           const items = PHOTO_TYPES.map((p, i) => `${i + 1}. ${p.label}`).join('\n')
           await (client as any).sendMessage(
             chatId,
             `📸 Instruksi Upload Evidence\n\n` +
             `🆔 ORDER ${evSess.orderId}\n` +
-            `📌 ODP: ${t}\n\n` +
+            `📌 ODP: ${odpName}\n` +
+            `🔖 SN ONT: ${snOnt}\n\n` +
             `Kirim 7 foto sesuai urutan berikut dengan membalas pesan ini:\n\n` +
             `${items}\n\n` +
             `UPLOAD_FOTO_ORDER ${evSess.orderId}`
@@ -1152,7 +1162,26 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text, uploaded_at: nowJakartaWithOffset() })
         }
         evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId, nextIndex: 1, processedPhotoIds: new Set<string>(), processing: false })
-        await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini atau langsung kirim; sistem akan mengaitkan foto ke order secara otomatis.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
+        // Fetch ODP & SN ONT to display in instruction
+        const { data: evInfo } = await supabaseAdmin
+          .from('evidence')
+          .select('odp_name, ont_sn')
+          .eq('order_id', orderId)
+          .maybeSingle()
+        const odpName = evInfo?.odp_name || '-'
+        const snOnt = evInfo?.ont_sn || '-'
+
+        const items = PHOTO_TYPES.map((p, i) => `${i + 1}. ${p.label}`).join('\n')
+        await (client as any).sendMessage(
+          chatId,
+          `📸 Instruksi Upload Evidence\n\n` +
+          `🆔 ORDER ${orderId}\n` +
+          `📌 ODP: ${odpName}\n` +
+          `🔖 SN ONT: ${snOnt}\n\n` +
+          `Kirim 7 foto sesuai urutan berikut dengan membalas pesan ini:\n\n` +
+          `${items}\n\n` +
+          `UPLOAD_FOTO_ORDER ${orderId}`
+        )
         return NextResponse.json({ ok: true })
       }
       // Pencarian Order
