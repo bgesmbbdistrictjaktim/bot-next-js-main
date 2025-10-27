@@ -1996,8 +1996,7 @@ async function handleProgressTextInput(client: any, chatId: number, telegramId: 
       return true;
     }
     await client.sendMessage(chatId, `✅ Catatan tersimpan untuk ORDER ${session.orderId} (stage: ${session.stage}).`);
-    // Tampilkan kembali opsi tahap
-    await promptStageOptions(client, chatId, session.stage, session.stage === 'penarikan_kabel' ? 'Penarikan Kabel' : session.stage === 'p2p' ? 'P2P' : 'Instalasi ONT', session.orderId);
+    // Tidak menampilkan kembali opsi tahap setelah catatan disimpan
     return true;
   } catch (err) {
     console.error('Error handleProgressTextInput:', err);
