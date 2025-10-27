@@ -832,6 +832,9 @@ export async function POST(req: NextRequest) {
             await (client as any).sendMessage(chatId, 'ℹ️ Belum ada teknisi terdaftar.')
           } else {
             const keyboard: any[] = technicians.map(t => [{ text: `👷 ${t.name}`, callback_data: `assign_tech_${t.id}` }])
+            // Fallback opsi: buat order tanpa teknisi lalu assign per stage
+            keyboard.push([{ text: '👥 Assign per Stage (buat order dulu)', callback_data: 'create_without_tech' }])
+            keyboard.push([{ text: '🔙 Kembali ke Menu Utama', callback_data: 'back_to_main' }])
             await (client as any).sendMessage(chatId, '🧑‍🔧 Pilih Teknisi yang akan ditugaskan:', { reply_markup: { inline_keyboard: keyboard } })
           }
         }
@@ -895,6 +898,54 @@ export async function POST(req: NextRequest) {
                 await (client as any).sendMessage(Number(tech.telegram_id), notif)
               }
               createOrderSessions.delete(chatId)
+            }
+          }
+        }
+      } else if (data === 'create_without_tech') {
+        const session = createOrderSessions.get(chatId)
+        if (!session || session.type !== 'create_order') {
+          await (client as any).sendMessage(chatId, 'ℹ️ Sesi pembuatan order tidak aktif. Mulai dari menu “📋 Buat Order”.')
+        } else {
+          const { data: creator } = await supabaseAdmin
+            .from('users').select('id, name').eq('telegram_id', String(telegramId)).maybeSingle()
+          const createdById = creator?.id
+          if (!createdById) {
+            await (client as any).sendMessage(chatId, '❌ Anda belum terdaftar sebagai user.')
+          } else {
+            const payload: any = {
+              order_id: session.data.order_id,
+              customer_name: session.data.customer_name,
+              customer_address: session.data.customer_address,
+              contact: session.data.contact,
+              sto: session.data.sto,
+              transaction_type: session.data.transaction_type,
+              service_type: session.data.service_type,
+              created_by: createdById,
+              assigned_technician: null,
+              status: 'Pending',
+            }
+            const { data: inserted, error: insertError } = await supabaseAdmin
+              .from('orders')
+              .insert(payload)
+              .select('*')
+              .maybeSingle()
+            if (insertError || !inserted) {
+              const reasonParts = [] as string[]
+              if (insertError?.message) reasonParts.push(insertError.message)
+              if ((insertError as any)?.details) reasonParts.push((insertError as any).details)
+              if ((insertError as any)?.hint) reasonParts.push((insertError as any).hint)
+              if ((insertError as any)?.code) reasonParts.push(`code=${(insertError as any).code}`)
+              const reasonText = reasonParts.length ? reasonParts.join(' | ') : 'Tidak diketahui'
+              await (client as any).sendMessage(
+                chatId,
+                `❌ Gagal membuat order tanpa teknisi.\n\nAlasan: ${reasonText}`,
+                { parse_mode: 'Markdown' }
+              )
+            } else {
+              await sendOrderCreatedSuccess(client as any, chatId, payload, '-')
+              createOrderSessions.delete(chatId)
+              // Setelah order dibuat, arahkan ke menu assign teknisi per stage utk order ini
+              await (showStageAssignmentMenu as any)(client as any, chatId, telegramId, payload.order_id)
             }
           }
         }
