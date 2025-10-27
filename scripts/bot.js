@@ -2128,7 +2128,7 @@ async function handleE2EUpdate(chatId, telegramId, orderId) {
     if (!order.sod_timestamp) {
       bot.sendMessage(chatId, 
         '❌ Order ini belum memiliki SOD timestamp.\n\n' +
-        '🚀 Silakan update SOD terlebih dahulu sebelum update E2E.'
+        'Silakan update SOD terlebih dahulu sebelum mengupdate E2E.'
       );
       return;
     }
@@ -5114,9 +5114,9 @@ async function notifyTechnicianLMEReady(orderId) {
       `📞 Telepon: ${order.contact || 'N/A'}\n` +
       `🔧 Layanan: ${order.service_type}\n` +
       `🏢 STO: ${order.sto}\n\n` +
-      '🚀 Anda dapat melanjutkan pekerjaan instalasi sekarang.\n' +
+      'Anda dapat melanjutkan pekerjaan instalasi sekarang.\n' +
       '⏰ TTI Comply 3x24 jam akan dimulai setelah PT2 selesai.\n\n' +
-      'Gunakan /progress untuk update progress pekerjaan.';
+      'Gunakan menu "📝 Update Progress" untuk mencatat perkembangan pekerjaan.';
 
     await bot.sendMessage(technician.telegram_id, message, { parse_mode: 'Markdown' });
     console.log(`✅ LME PT2 ready notification sent to technician ${technician.name} for order ${orderId}`);
