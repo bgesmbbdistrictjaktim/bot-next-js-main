@@ -146,7 +146,7 @@ const progressUpdateSessions = new Map<number, { type: 'update_progress', orderI
 const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string, nextIndex?: number, processedPhotoIds?: Set<string>, processing?: boolean }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
-const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jl','New install','PDA']
+const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jt','New install','PDA']
 const SERVICE_OPTIONS = ['Astinet','Metro','Vpn Ip','Ip Transit','Siptrunk']
 
 // Canonical mapping to satisfy DB check constraint orders_service_type_check
@@ -160,6 +160,20 @@ const SERVICE_CANONICAL_MAP: Record<string, string> = {
 function normalizeServiceType(val: string): string {
   const t = (val || '').trim()
   return SERVICE_CANONICAL_MAP[t] ?? t
+}
+
+// Canonical mapping for transaction_type to satisfy DB check constraint
+const TRANSACTION_CANONICAL_MAP: Record<string, string> = {
+  Disconnect: 'Disconnect',
+  Modify: 'modify',
+  'New install existing': 'new install existing',
+  'New install jt': 'new install jt',
+  'New install': 'new install',
+  PDA: 'PDA',
+}
+function normalizeTransactionType(val: string): string {
+  const t = (val || '').trim()
+  return TRANSACTION_CANONICAL_MAP[t] ?? t.toLowerCase()
 }
 
 function chunkKeyboard(items: string[], prefix: string, perRow = 3) {
@@ -870,7 +884,7 @@ export async function POST(req: NextRequest) {
               customer_address: session.data.customer_address,
               contact: session.data.contact,
               sto: session.data.sto,
-              transaction_type: session.data.transaction_type,
+              transaction_type: normalizeTransactionType(session.data.transaction_type),
               service_type: normalizeServiceType(session.data.service_type),
               created_by: createdById,
               assigned_technician: techId,
@@ -930,7 +944,7 @@ export async function POST(req: NextRequest) {
               customer_address: session.data.customer_address,
               contact: session.data.contact,
               sto: session.data.sto,
-              transaction_type: session.data.transaction_type,
+              transaction_type: normalizeTransactionType(session.data.transaction_type),
               service_type: normalizeServiceType(session.data.service_type),
               created_by: createdById,
               assigned_technician: null,
