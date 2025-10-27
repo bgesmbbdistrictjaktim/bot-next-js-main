@@ -154,8 +154,8 @@ async function formatOrderDetail(order: any, evidence?: any, createdByName?: str
   }
   lines.push(stageLine('Survey Jaringan', progress?.survey_jaringan))
   lines.push(stageLine('Penarikan Kabel', progress?.penarikan_kabel))
-  lines.push(stageLine('P2P', progress?.p2p))
   lines.push(stageLine('Instalasi ONT', progress?.instalasi_ont))
+  lines.push(stageLine('P2P', progress?.p2p))
   lines.push('')
   // 👥 ASSIGNMENT TEKNISI PER STAGE
   lines.push('👥 ASSIGNMENT TEKNISI PER STAGE')
@@ -172,7 +172,7 @@ async function formatOrderDetail(order: any, evidence?: any, createdByName?: str
     Instalasi: 'Instalasi',
     Evidence: 'Evidence',
   }
-  const stagesOrder = ['Survey', 'Penarikan', 'P2P', 'Instalasi', 'Evidence']
+  const stagesOrder = ['Survey', 'Penarikan', 'Instalasi', 'P2P', 'Evidence']
   for (const stg of stagesOrder) {
     const a = assignmentMap[stg]
     if (a && a.users?.name) {
@@ -1780,7 +1780,7 @@ async function notifyTechnicianLMEReady(client: any, orderId: string) {
       .eq('order_id', orderId);
 
     if (assignments && assignments.length) {
-      const preferredStages = ['Instalasi', 'P2P', 'Penarikan', 'Survey', 'Evidence'];
+      const preferredStages = ['Instalasi', 'Penarikan', 'Survey', 'P2P', 'Evidence'];
       let found: string | undefined;
       for (const stage of preferredStages) {
         const a = assignments.find((x: any) => x.stage === stage && x.assigned_technician);
@@ -1952,7 +1952,7 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
     const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
+      .update({ sod_timestamp: jakartaTimestamp, tti_comply_deadline: deadlineTimestamp, tti_comply_status: 'In Progress', updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating order SOD:', updateError);
@@ -2041,8 +2041,8 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
 
     message += stageLine('Survey Jaringan', progress?.survey_jaringan) + '\n';
     message += stageLine('Penarikan Kabel', progress?.penarikan_kabel) + '\n';
-    message += stageLine('P2P', progress?.p2p) + '\n';
-    message += stageLine('Instalasi ONT', progress?.instalasi_ont) + '\n\n';
+    message += stageLine('Instalasi ONT', progress?.instalasi_ont) + '\n';
+    message += stageLine('P2P', progress?.p2p) + '\n\n';
 
     message += 'Pilih tahapan progress:';
 
@@ -2050,8 +2050,8 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
       inline_keyboard: [
         [{ text: '🔍 Survey', callback_data: `progress_survey_${orderId}` }],
         [{ text: '📡 Penarikan Kabel', callback_data: `progress_penarikan_${orderId}` }],
-        [{ text: '🔗 P2P', callback_data: `progress_p2p_${orderId}` }],
         [{ text: '🔧 Instalasi ONT', callback_data: `progress_instalasi_${orderId}` }],
+        [{ text: '🔗 P2P', callback_data: `progress_p2p_${orderId}` }],
         [{ text: '⬅️ Kembali', callback_data: 'update_progress' }],
       ],
     };
