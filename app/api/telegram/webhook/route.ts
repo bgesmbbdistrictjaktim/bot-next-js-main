@@ -1235,7 +1235,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (error: any) {
     const message = error?.response?.data || error?.message || 'Unknown error'
-    return NextResponse.json({ error: 'Webhook handler failed', details: message }, { status: 500 })
+    console.error('Webhook handler failed:', message)
+    // Jangan balas 500 agar Telegram tidak retry terus dan tombol tidak nge-freeze
+    return NextResponse.json({ ok: false, error: String(message) })
   }
 }
 
