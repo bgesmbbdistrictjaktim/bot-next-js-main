@@ -450,7 +450,7 @@ export async function POST(req: NextRequest) {
         } else {
           // Mulai flow create order inline berbasis sesi
           createOrderSessions.set(chatId, { type: 'create_order', step: 'order_id', data: {} })
-          await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { parse_mode: 'HTML' })
+          await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:')
         }
       } else if (data === 'my_orders') {
         const role = await (getUserRole as any)(telegramId)
@@ -754,14 +754,14 @@ export async function POST(req: NextRequest) {
             for (let idx = 0; idx < lines.length; idx++) {
               const line = lines[idx]
               if ((buf + line + '\n').length > 3500) {
-                await (client as any).sendMessage(chatId, buf, { parse_mode: 'Markdown' })
+                await (client as any).sendMessage(chatId, buf)
                 buf = ''
               }
               buf += line + '\n'
             }
-            await (client as any).sendMessage(chatId, buf.trim(), { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } })
+            await (client as any).sendMessage(chatId, buf.trim(), { reply_markup: { inline_keyboard: keyboard } })
           } else {
-            await (client as any).sendMessage(chatId, message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } })
+            await (client as any).sendMessage(chatId, message, { reply_markup: { inline_keyboard: keyboard } })
           }
         }
       } else if (data === 'back_to_completed_menu') {
@@ -878,8 +878,7 @@ export async function POST(req: NextRequest) {
               const reasonText = reasonParts.length ? reasonParts.join(' | ') : 'Tidak diketahui'
               await (client as any).sendMessage(
                 chatId,
-                `❌ Gagal membuat order.\n\nAlasan: ${reasonText}\n\nSilakan pilih teknisi lain atau ulangi proses.`,
-                { parse_mode: 'Markdown' }
+                `❌ Gagal membuat order.\n\nAlasan: ${reasonText}\n\nSilakan pilih teknisi lain atau ulangi proses.`
               )
               // Tetap pertahankan sesi agar pengguna bisa coba lagi memilih teknisi
             } else {
@@ -938,8 +937,7 @@ export async function POST(req: NextRequest) {
               const reasonText = reasonParts.length ? reasonParts.join(' | ') : 'Tidak diketahui'
               await (client as any).sendMessage(
                 chatId,
-                `❌ Gagal membuat order tanpa teknisi.\n\nAlasan: ${reasonText}`,
-                { parse_mode: 'Markdown' }
+                `❌ Gagal membuat order tanpa teknisi.\n\nAlasan: ${reasonText}`
               )
             } else {
               await sendOrderCreatedSuccess(client as any, chatId, payload, '-')
@@ -1092,7 +1090,7 @@ export async function POST(req: NextRequest) {
       const role = await (getUserRole as any)(telegramId)
       if (role === 'HD') {
         createOrderSessions.set(chatId, { type: 'create_order', step: 'order_id', data: {} })
-        await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { parse_mode: 'HTML' })
+        await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:')
       } else {
         await (client as any).sendMessage(chatId, '❌ Hanya HD yang dapat membuat order.')
       }
@@ -1227,9 +1225,7 @@ export async function POST(req: NextRequest) {
         await showLMEPT2UpdateMenu(client as any, chatId, telegramId)
       }
     } else {
-      await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.', {
-        parse_mode: 'HTML',
-      })
+      await (client as any).sendMessage(chatId, 'Perintah tidak dikenali. Gunakan /start atau /help.')
     }
 
     return NextResponse.json({ ok: true })
@@ -1299,12 +1295,11 @@ async function showE2EUpdateMenu(client: any, chatId: number, telegramId: string
 // Menu: Update LME PT2
 async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: string) {
   await client.sendMessage(chatId,
-    '📝 **UPDATE LME PT2**\n\n' +
+    '📝 UPDATE LME PT2\n\n' +
     '📋 Pilih order untuk update LME PT2 timestamp:\n' +
     '⏰ LME PT2 akan diset ke waktu sekarang (WIB)\n' +
     '🔔 Teknisi akan mendapat notifikasi bahwa LME PT2 sudah ready',
     {
-      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
           [{ text: '🔍 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
@@ -1491,7 +1486,6 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   keyboard.push([{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }])
 
   await client.sendMessage(chatId, message, {
-    parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: keyboard }
   })
 }
