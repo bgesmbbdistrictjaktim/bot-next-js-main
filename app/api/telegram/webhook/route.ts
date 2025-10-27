@@ -4,6 +4,7 @@ import { createHttpBotClient } from '@/lib/telegramClient'
 import { handleStart } from '@/lib/botHandlers/start'
 import { handleHelp } from '@/lib/botHandlers/help'
 import { checkUserRegistration, handleRegistrationCallback } from '@/lib/botHandlers/registration'
+import { showWelcomeMessage } from '@/lib/botHandlers/welcome'
 import { showMyOrders } from '@/lib/botHandlers/orders'
 import { showProgressMenu } from '@/lib/botHandlers/progress'
 import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
@@ -205,6 +206,8 @@ const progressSpamGuard = new Map<number, number>()
 const createOrderSessions = new Map<number, { type: 'create_order', step: string, data: any }>()
 const progressUpdateSessions = new Map<number, { type: 'update_progress', orderId: string, stage: 'penarikan_kabel' | 'p2p' | 'instalasi_ont' }>()
 const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderId: string, waitingInput?: 'odp_name' | 'ont_sn', nextIndex?: number, processedPhotoIds?: Set<string>, processing?: boolean }>()
+// Session for registration custom name input
+const registrationNameSessions = new Map<number, { role: 'HD' | 'Teknisi' }>()
 
 const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jt','New install','PDA']
@@ -503,8 +506,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // 0.5) Handle plain text input for sessions (Create Order & Progress Notes)
+    // 0.5) Handle plain text input for sessions (Registration Name, Evidence, Progress, Create Order)
     if (update?.message?.text) {
+      // Handle registration custom-name input first
+      const regSess = registrationNameSessions.get(chatId)
+      if (regSess) {
+        const typedName = (update.message.text || '').trim()
+        if (!typedName || typedName.length < 2) {
+          await (client as any).sendMessage(chatId, '⚠️ Nama terlalu pendek. Masukkan minimal 2 karakter.')
+          return NextResponse.json({ ok: true })
+        }
+        const { data: existing } = await supabaseAdmin
+          .from('users')
+          .select('id')
+          .eq('telegram_id', String(telegramId))
+          .maybeSingle()
+        if (!existing) {
+          const { error: insertErr } = await supabaseAdmin
+            .from('users')
+            .insert({ telegram_id: String(telegramId), name: typedName, role: regSess.role })
+          if (insertErr) {
+            await (client as any).sendMessage(chatId, `❌ Gagal mendaftar: ${insertErr.message}`)
+            registrationNameSessions.delete(chatId)
+            return NextResponse.json({ ok: true })
+          }
+        } else {
+          await supabaseAdmin
+            .from('users')
+            .update({ name: typedName, role: regSess.role })
+            .eq('telegram_id', String(telegramId))
+        }
+        await (showWelcomeMessage as any)(client as any, chatId, regSess.role, typedName)
+        registrationNameSessions.delete(chatId)
+        return NextResponse.json({ ok: true })
+      }
+
       // Handle evidence text input (ODP name / SN ONT)
       const evSess = evidenceUploadSessions.get(chatId)
       if (evSess && evSess.type === 'upload_evidence') {
@@ -603,7 +639,11 @@ export async function POST(req: NextRequest) {
       // Acknowledge callback to stop Telegram spinner
       try { await (client as any).answerCallbackQuery(update.callback_query.id) } catch (_) {}
       // Handle registration callbacks first
-      await (handleRegistrationCallback as any)(client as any, update.callback_query)
+      const regRes = await (handleRegistrationCallback as any)(client as any, update.callback_query)
+      if (regRes && typeof regRes === 'object' && (regRes as any).requiresNameInput && (regRes as any).role) {
+        registrationNameSessions.set(chatId, { role: (regRes as any).role })
+        return NextResponse.json({ ok: true })
+      }
 
       if (data === 'create_order') {
         const role = await (getUserRole as any)(telegramId)
