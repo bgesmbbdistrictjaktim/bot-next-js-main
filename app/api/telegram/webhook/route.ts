@@ -512,7 +512,7 @@ export async function POST(req: NextRequest) {
         if (evSess.waitingInput === 'odp_name') {
           await supabaseAdmin
             .from('evidence')
-            .upsert({ order_id: evSess.orderId, odp_name: t }, { onConflict: 'order_id' })
+            .upsert({ order_id: evSess.orderId, odp_name: t, uploaded_at: nowJakartaWithOffset() }, { onConflict: 'order_id' })
 
           evSess.waitingInput = 'ont_sn'
           evidenceUploadSessions.set(chatId, evSess)
@@ -522,7 +522,7 @@ export async function POST(req: NextRequest) {
         if (evSess.waitingInput === 'ont_sn') {
           await supabaseAdmin
             .from('evidence')
-            .upsert({ order_id: evSess.orderId, ont_sn: (t || '-') }, { onConflict: 'order_id' })
+            .upsert({ order_id: evSess.orderId, ont_sn: (t || '-'), uploaded_at: nowJakartaWithOffset() }, { onConflict: 'order_id' })
 
           // Ready to start photo uploads
           evSess.waitingInput = undefined
@@ -1104,9 +1104,9 @@ export async function POST(req: NextRequest) {
           .eq('order_id', orderId)
           .maybeSingle()
         if (evODP) {
-          await supabaseAdmin.from('evidence').update({ odp_name: text }).eq('order_id', orderId)
+          await supabaseAdmin.from('evidence').update({ odp_name: text, uploaded_at: nowJakartaWithOffset() }).eq('order_id', orderId)
         } else {
-          await supabaseAdmin.from('evidence').insert({ order_id: orderId, odp_name: text })
+          await supabaseAdmin.from('evidence').insert({ order_id: orderId, odp_name: text, uploaded_at: nowJakartaWithOffset() })
         }
         await (client as any).sendMessage(chatId, `Masukkan SN ONT untuk ORDER ${orderId}:`, {
           reply_markup: { force_reply: true }
@@ -1123,9 +1123,9 @@ export async function POST(req: NextRequest) {
           .eq('order_id', orderId)
           .maybeSingle()
         if (evSN) {
-          await supabaseAdmin.from('evidence').update({ ont_sn: text }).eq('order_id', orderId)
+          await supabaseAdmin.from('evidence').update({ ont_sn: text, uploaded_at: nowJakartaWithOffset() }).eq('order_id', orderId)
         } else {
-          await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text })
+          await supabaseAdmin.from('evidence').insert({ order_id: orderId, ont_sn: text, uploaded_at: nowJakartaWithOffset() })
         }
         evidenceUploadSessions.set(chatId, { type: 'upload_evidence', orderId, nextIndex: 1, processedPhotoIds: new Set<string>(), processing: false })
         await (client as any).sendMessage(chatId, `Silakan kirim 7 foto evidence secara berurutan.\n\n1. Foto SN ONT\n2. Foto Teknisi + Pelanggan\n3. Foto Rumah Pelanggan\n4. Foto Depan ODP\n5. Foto Dalam ODP\n6. Foto Label DC\n7. Foto Test Redaman\n\nPENTING: Kirim setiap foto sebagai balasan (reply) ke pesan ini atau langsung kirim; sistem akan mengaitkan foto ke order secara otomatis.\n\nUPLOAD_FOTO_ORDER ${orderId}`)
