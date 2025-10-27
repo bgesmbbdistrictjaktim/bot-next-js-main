@@ -1977,6 +1977,27 @@ async function handleSurveyResult(client: any, chatId: number, telegramId: strin
     if (orderErr) {
       console.error('Error updating order after survey:', orderErr);
     }
+    // Jika jaringan Not Ready, catat waktu LME PT2 start jika belum tercatat
+    if (!isReady) {
+      try {
+        const { data: ord } = await supabaseAdmin
+          .from('orders')
+          .select('lme_pt2_start')
+          .eq('order_id', orderId)
+          .maybeSingle();
+        if (!ord?.lme_pt2_start) {
+          const { error: startErr } = await supabaseAdmin
+            .from('orders')
+            .update({ lme_pt2_start: jakartaTimestamp, updated_at: new Date().toISOString() })
+            .eq('order_id', orderId);
+          if (startErr) {
+            console.error('Error setting lme_pt2_start:', startErr);
+          }
+        }
+      } catch (e) {
+        console.error('Error checking/updating lme_pt2_start:', e);
+      }
+    }
     await client.sendMessage(
       chatId,
       `✅ Survey diperbarui untuk ORDER ${orderId}\nStatus: ${isReady ? 'Ready' : 'Not Ready'}\nWaktu: ${formatIndonesianDateTime(jakartaTimestamp)}\nTeknisi: ${techName}`
