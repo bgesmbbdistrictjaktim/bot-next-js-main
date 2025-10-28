@@ -228,7 +228,9 @@ const evidenceUploadSessions = new Map<number, { type: 'upload_evidence', orderI
 // Session for registration custom name input
 const registrationNameSessions = new Map<number, { role: 'HD' | 'Teknisi' }>()
 
-const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PKD','PGB','KLG','PGG','PSR','RMG','PGN','BIN','CPE','JAG','KLL','KBY','KMG','TBE','NAS']
+// STO options must match database check constraint orders_sto_check
+// Keep in sync with lib/botHandlers/createOrder.js allowed list
+const STO_OPTIONS = ['CBB','CWA','GAN','JTN','KLD','KRG','PDK','PGB','PGG','PSR','RMG','BIN','CPE','JAG','KAL','KBY','KMG','PSM','TBE','NAS']
 const TRANSACTION_OPTIONS = ['Disconnect','Modify','New install existing','New install jt','New install','PDA']
 const SERVICE_OPTIONS = ['Astinet','Metro','Vpn Ip','Ip Transit','Siptrunk']
 
@@ -1034,9 +1036,14 @@ export async function POST(req: NextRequest) {
         const sto = data.replace('sto_', '')
         const session = createOrderSessions.get(chatId)
         if (session && session.type === 'create_order') {
-          session.data.sto = sto
-          session.step = 'transaction'
-          await (client as any).sendMessage(chatId, `✅ STO: ${sto}\n\n5️⃣ Pilih Type Transaksi:`, { reply_markup: getTransactionKeyboard() })
+          // Validate against allowed STO options to prevent DB check constraint violation
+          if (!STO_OPTIONS.includes(sto)) {
+            await (client as any).sendMessage(chatId, `⚠️ STO tidak valid. Pilih salah satu dari daftar.` , { reply_markup: getStoKeyboard() })
+          } else {
+            session.data.sto = sto
+            session.step = 'transaction'
+            await (client as any).sendMessage(chatId, `✅ STO: ${sto}\n\n5️⃣ Pilih Type Transaksi:`, { reply_markup: getTransactionKeyboard() })
+          }
         }
       } else if (data && data.startsWith('transaction_')) {
         const trx = data.replace('transaction_', '')
