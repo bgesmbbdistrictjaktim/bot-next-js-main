@@ -276,7 +276,7 @@ function chunkKeyboard(items: string[], prefix: string, perRow = 3) {
 function appendCancelRow(kb: any) {
   const ik = kb?.inline_keyboard || []
   ik.push([{ text: '⬅️ Kembali', callback_data: 'create_order_back' }])
-  ik.push([{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }])
+  ik.push([{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }])
   return { inline_keyboard: ik }
 }
 
@@ -297,24 +297,24 @@ async function handleCreateOrderTextInput(client: any, chatId: number, telegramI
   if (session.step === 'order_id') {
     const { data: exist } = await supabaseAdmin.from('orders').select('order_id').eq('order_id', t).maybeSingle()
     if (exist) {
-      await client.sendMessage(chatId, '❌ Order ID sudah ada.\n\n🆔 Silakan masukkan Order ID yang berbeda:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+      await client.sendMessage(chatId, '❌ Order ID sudah ada.\n\n🆔 Silakan masukkan Order ID yang berbeda:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
       return true
     }
     session.data.order_id = t
     session.step = 'customer_name'
-    await client.sendMessage(chatId, `✅ Order ID: ${t}\n\n1️⃣ Nama Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+    await client.sendMessage(chatId, `✅ Order ID: ${t}\n\n1️⃣ Nama Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
     return true
   }
   if (session.step === 'customer_name') {
     session.data.customer_name = t
     session.step = 'customer_address'
-    await client.sendMessage(chatId, `✅ Nama pelanggan: ${t}\n\n2️⃣ Alamat Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+    await client.sendMessage(chatId, `✅ Nama pelanggan: ${t}\n\n2️⃣ Alamat Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
     return true
   }
   if (session.step === 'customer_address') {
     session.data.customer_address = t
     session.step = 'customer_contact'
-    await client.sendMessage(chatId, `✅ Alamat pelanggan: ${t}\n\n3️⃣ Kontak Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+    await client.sendMessage(chatId, `✅ Alamat pelanggan: ${t}\n\n3️⃣ Kontak Pelanggan:`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
     return true
   }
   if (session.step === 'customer_contact') {
@@ -715,13 +715,13 @@ export async function POST(req: NextRequest) {
           } else {
             session.step = prev
             if (prev === 'order_id') {
-              await (client as any).sendMessage(chatId, '🆔 Silakan masukkan Order ID:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+              await (client as any).sendMessage(chatId, '🆔 Silakan masukkan Order ID:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
             } else if (prev === 'customer_name') {
-              await (client as any).sendMessage(chatId, '1️⃣ Nama Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+              await (client as any).sendMessage(chatId, '1️⃣ Nama Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
             } else if (prev === 'customer_address') {
-              await (client as any).sendMessage(chatId, '2️⃣ Alamat Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+              await (client as any).sendMessage(chatId, '2️⃣ Alamat Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
             } else if (prev === 'customer_contact') {
-              await (client as any).sendMessage(chatId, '3️⃣ Kontak Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+              await (client as any).sendMessage(chatId, '3️⃣ Kontak Pelanggan:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
             } else if (prev === 'sto') {
               await (client as any).sendMessage(chatId, '4️⃣ Pilih STO:', { reply_markup: getStoKeyboard() })
             } else if (prev === 'transaction') {
@@ -738,7 +738,7 @@ export async function POST(req: NextRequest) {
         } else {
           // Mulai flow create order inline berbasis sesi
           createOrderSessions.set(chatId, { type: 'create_order', step: 'order_id', data: {} })
-          await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+          await (client as any).sendMessage(chatId, '📋 Membuat Order Baru\n\n🆔 Silakan masukkan Order ID:', { reply_markup: { inline_keyboard: [[{ text: '⬅️ Kembali', callback_data: 'create_order_back' }], [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
         }
       } else if (data === 'my_orders') {
         const role = await (getUserRole as any)(telegramId)
@@ -786,15 +786,15 @@ export async function POST(req: NextRequest) {
       } else if (data && data.startsWith('add_note_penarikan_')) {
         const orderId = data.replace('add_note_penarikan_', '')
         progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'penarikan_kabel' })
-        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Penarikan Kabel\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Penarikan Kabel\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
       } else if (data && data.startsWith('add_note_p2p_')) {
         const orderId = data.replace('add_note_p2p_', '')
         progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'p2p' })
-        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - P2P\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - P2P\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
       } else if (data && data.startsWith('add_note_instalasi_')) {
         const orderId = data.replace('add_note_instalasi_', '')
         progressUpdateSessions.set(chatId, { type: 'update_progress', orderId, stage: 'instalasi_ont' })
-        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Instalasi ONT\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]] } })
+        await (client as any).sendMessage(chatId, `📝 Tambah Catatan - Instalasi ONT\n\n🆔 ORDER ${orderId}\n\nSilakan kirim catatan Anda:`, { reply_markup: { inline_keyboard: [[{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]] } })
       } else if (data === 'search_order') {
         await (client as any).sendMessage(
           chatId,
@@ -1659,7 +1659,7 @@ async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: str
         inline_keyboard: [
           [{ text: '🔍 Pilih Order untuk Update LME PT2', callback_data: 'select_order_for_lme_pt2' }],
           [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }],
-          [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }]
+          [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }]
         ]
       }
     }
@@ -1875,7 +1875,7 @@ async function showLMEPT2OrderSelection(client: any, chatId: number, telegramId:
   })
 
   keyboard.push([{ text: '🔙 Kembali ke Menu LME PT2', callback_data: 'back_to_menu' }])
-      keyboard.push([{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }])
+      keyboard.push([{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }])
 
   await client.sendMessage(chatId, decodeUnicodeEscapes(message), {
     reply_markup: { inline_keyboard: keyboard }
@@ -2187,7 +2187,7 @@ async function showProgressStages(client: any, chatId: number, orderId: string) 
         [{ text: '🔧 Instalasi ONT', callback_data: `progress_instalasi_${orderId}` }],
         [{ text: '🔗 P2P', callback_data: `progress_p2p_${orderId}` }],
         [{ text: '⬅️ Kembali', callback_data: 'update_progress' }],
-    [{ text: '❌ BATALKAN/EN SESSION', callback_data: 'cancel_session' }],
+    [{ text: '❌ BATALKAN / END SESSION', callback_data: 'cancel_session' }],
       ],
     };
 
