@@ -2006,7 +2006,7 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
     const durationWithDate = `${readableDuration} (${e2eDate})`;
     const { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ e2e_timestamp: jakartaTimestamp, tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, updated_at: nowJakartaWithOffset() })
+      .update({ e2e_timestamp: jakartaTimestamp, tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, tti_comply_deadline: null, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (updateError) {
       console.error('Error updating E2E timestamp & TTI:', updateError);
