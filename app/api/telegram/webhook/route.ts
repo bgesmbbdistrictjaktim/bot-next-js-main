@@ -2004,6 +2004,21 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
     const readableDuration = formatReadableDuration(durationHours);
     const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const durationWithDate = `${readableDuration} (${e2eDate})`;
+    // Pastikan SOD ada sebelum menghitung dan menyimpan TTI
+    const { data: sodRow, error: sodErr } = await supabaseAdmin
+      .from('orders')
+      .select('sod_timestamp')
+      .eq('order_id', orderId)
+      .maybeSingle();
+    if (sodErr) {
+      console.error('Error fetching SOD before E2E:', sodErr);
+      await client.sendMessage(chatId, '❌ Gagal mengambil SOD untuk order ini.');
+      return;
+    }
+    if (!sodRow || !sodRow.sod_timestamp) {
+      await client.sendMessage(chatId, '❌ Tidak bisa set E2E karena SOD belum terekam. Silakan set SOD terlebih dahulu.');
+      return;
+    }
     const updatePayload = { e2e_timestamp: jakartaTimestamp, tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, tti_comply_deadline: null, status: 'Completed', updated_at: nowJakartaWithOffset() } as any;
     let { error: updateError } = await supabaseAdmin
       .from('orders')
