@@ -1635,12 +1635,12 @@ async function showSODOrderSelection(client: any, chatId: number, telegramId: st
     return;
   }
 
-  const lines = orders.map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})`).join('\n');
+  const lines = orders.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})`).join('\n');
 
   await client.sendMessage(chatId, `Pilih order untuk update SOD:\n\n${lines}`, {
     reply_markup: {
       inline_keyboard: [
-        ...orders.map((o: any) => [{ text: `🕘 Update SOD: ${o.order_id}`, callback_data: `sod_order_${o.order_id}` }]),
+        ...orders.map((o: any, idx: number) => [{ text: `${idx + 1}. 🕘 Update SOD: ${o.order_id}`, callback_data: `sod_order_${o.order_id}` }]),
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1661,12 +1661,12 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
     return;
   }
 
-  const lines = orders.map((o: any) => `• ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`).join('\n\n');
+  const lines = orders.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`).join('\n\n');
 
   await client.sendMessage(chatId, `Pilih order untuk update E2E:\n\n${lines}`, {
     reply_markup: {
       inline_keyboard: [
-        ...orders.map((o: any) => [{ text: `🎯 Update E2E: ${o.order_id}`, callback_data: `e2e_order_${o.order_id}` }]),
+        ...orders.map((o: any, idx: number) => [{ text: `${idx + 1}. 🎯 Update E2E: ${o.order_id}`, callback_data: `e2e_order_${o.order_id}` }]),
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
