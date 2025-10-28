@@ -1967,7 +1967,7 @@ async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp
     const durationWithDate = `${readableDuration} (${e2eDate})`;
     const { error: ttiErr } = await supabaseAdmin
       .from('orders')
-      .update({ tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, updated_at: nowJakartaWithOffset() })
+      .update({ tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, tti_comply_deadline: null, updated_at: nowJakartaWithOffset() })
       .eq('order_id', orderId);
     if (ttiErr) {
       console.error('Supabase update error (TTI comply after E2E):', ttiErr);
@@ -2004,10 +2004,24 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
     const readableDuration = formatReadableDuration(durationHours);
     const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const durationWithDate = `${readableDuration} (${e2eDate})`;
-    const { error: updateError } = await supabaseAdmin
+    const updatePayload = { e2e_timestamp: jakartaTimestamp, tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, tti_comply_deadline: null, status: 'Completed', updated_at: nowJakartaWithOffset() } as any;
+    let { error: updateError } = await supabaseAdmin
       .from('orders')
-      .update({ e2e_timestamp: jakartaTimestamp, tti_comply_status: complyStatus, tti_comply_actual_duration: durationWithDate, tti_comply_deadline: null, status: 'Completed', updated_at: nowJakartaWithOffset() })
+      .update(updatePayload)
       .eq('order_id', orderId);
+    if (updateError && (updateError as any).code === '23514') {
+      // Fallback: jika constraint menolak (mis. durasi >72 jam tapi status 'Comply'), paksa 'Not Comply'
+      const fallbackStatus = 'Not Comply';
+      const fallbackPayload = { ...updatePayload, tti_comply_status: fallbackStatus } as any;
+      const { error: fallbackErr } = await supabaseAdmin
+        .from('orders')
+        .update(fallbackPayload)
+        .eq('order_id', orderId);
+      if (!fallbackErr) {
+        console.warn('TTI status fallback applied due to constraint:', { orderId, from: complyStatus, to: fallbackStatus });
+      }
+      updateError = fallbackErr;
+    }
     if (updateError) {
       console.error('Error updating E2E timestamp & TTI:', updateError);
       await client.sendMessage(chatId, '❌ Gagal mengupdate E2E/TTI ke database.');
