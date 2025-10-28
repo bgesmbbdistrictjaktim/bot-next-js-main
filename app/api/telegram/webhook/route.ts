@@ -8,7 +8,7 @@ import { showWelcomeMessage } from '@/lib/botHandlers/welcome'
 import { showMyOrders } from '@/lib/botHandlers/orders'
 import { showProgressMenu } from '@/lib/botHandlers/progress'
 import { showEvidenceMenu } from '@/lib/botHandlers/evidence'
-import { getUserRole, getStatusEmoji, getProgressStatusEmoji, formatAssignmentSimple } from '@/lib/botUtils'
+import { getUserRole, getStatusEmoji, getProgressStatusEmoji, formatAssignmentSimple, sortOrdersNewestFirst } from '@/lib/botUtils'
 import { supabaseAdmin } from '@/lib/supabase'
 import { showOrderSelectionForStageAssignment, showStageAssignmentMenu, showTechnicianSelectionForStage, assignTechnicianToStage, showTechnicianSelectionForAllStages, assignTechnicianToAllStages } from '@/lib/botHandlers/assignment'
 import { startCreateOrderFlow, handleCreateOrderReply, showDirectAssignmentTechnicians, assignTechnicianDirectly } from '@/lib/botHandlers/createOrder'
@@ -1628,19 +1628,20 @@ async function showSODOrderSelection(client: any, chatId: number, telegramId: st
     .from('orders')
     .select('order_id, customer_name, sto, created_at')
     .is('sod_timestamp', null)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
 
   if (!orders || orders.length === 0) {
     await client.sendMessage(chatId, '✅ Semua order sudah memiliki waktu SOD.');
     return;
   }
 
-  const lines = orders.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})`).join('\n');
+  const sorted = sortOrdersNewestFirst(orders || []);
+  const lines = sorted.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})`).join('\n');
 
   await client.sendMessage(chatId, `Pilih order untuk update SOD:\n\n${lines}`, {
     reply_markup: {
       inline_keyboard: [
-        ...orders.map((o: any, idx: number) => [{ text: `${idx + 1}. 🕘 Update SOD: ${o.order_id}`, callback_data: `sod_order_${o.order_id}` }]),
+        ...sorted.map((o: any, idx: number) => [{ text: `${idx + 1}. 🕘 Update SOD: ${o.order_id}`, callback_data: `sod_order_${o.order_id}` }]),
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
@@ -1654,19 +1655,20 @@ async function showE2EOrderSelection(client: any, chatId: number, telegramId: st
     .select('order_id, customer_name, sto, created_at, sod_timestamp')
     .not('sod_timestamp', 'is', null)
     .is('e2e_timestamp', null)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
 
   if (!orders || orders.length === 0) {
     await client.sendMessage(chatId, '✅ Tidak ada order yang menunggu update E2E.');
     return;
   }
 
-  const lines = orders.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`).join('\n\n');
+  const sortedE2E = sortOrdersNewestFirst(orders || []);
+  const lines = sortedE2E.map((o: any, idx: number) => `${idx + 1}. ${o.order_id} — ${o.customer_name} (${o.sto})\n  SOD: ${formatIndonesianDateTime(o.sod_timestamp)}`).join('\n\n');
 
   await client.sendMessage(chatId, `Pilih order untuk update E2E:\n\n${lines}`, {
     reply_markup: {
       inline_keyboard: [
-        ...orders.map((o: any, idx: number) => [{ text: `${idx + 1}. 🎯 Update E2E: ${o.order_id}`, callback_data: `e2e_order_${o.order_id}` }]),
+        ...sortedE2E.map((o: any, idx: number) => [{ text: `${idx + 1}. 🎯 Update E2E: ${o.order_id}`, callback_data: `e2e_order_${o.order_id}` }]),
         [{ text: '🔙 Kembali', callback_data: 'back_to_menu' }]
       ]
     }
