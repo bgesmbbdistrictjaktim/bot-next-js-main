@@ -1961,7 +1961,8 @@ async function updateComplyCalculationFromSODToE2E(orderId: string, e2eTimestamp
     const e2eTime = new Date(e2eIso);
     const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5;
     const isComply = durationHours <= 72;
-    const complyStatus = isComply ? 'Comply' : 'Not Comply';
+    // Simpan TTI status mengikuti konvensi lowercase: 'comply' / 'not comply'
+    const complyStatus = isComply ? 'comply' : 'not comply';
     const readableDuration = formatReadableDuration(durationHours);
     const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const durationWithDate = `${readableDuration} (${e2eDate})`;
@@ -2000,7 +2001,8 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
     const sodTime = new Date(String(order.sod_timestamp).replace(' ', 'T'));
     const e2eTime = new Date(String(jakartaTimestamp).replace(' ', 'T'));
     const durationHours = (e2eTime.getTime() - sodTime.getTime()) / 36e5;
-    const complyStatus = durationHours <= 72 ? 'Comply' : 'Not Comply';
+    // Ikuti aturan user: gunakan lowercase 'comply' / 'not comply'
+    const complyStatus = durationHours <= 72 ? 'comply' : 'not comply';
     const readableDuration = formatReadableDuration(durationHours);
     const e2eDate = e2eTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const durationWithDate = `${readableDuration} (${e2eDate})`;
@@ -2025,21 +2027,29 @@ async function handleE2EUpdate(client: any, chatId: number, telegramId: string, 
       .update(updatePayload)
       .eq('order_id', orderId);
     if (updateError && (updateError as any).code === '23514') {
-      // Fallback: jika constraint menolak (mis. durasi >72 jam tapi status 'Comply'), paksa 'Not Comply'
-      const fallbackStatus = 'Not Comply';
-      const fallbackPayload = { ...updatePayload, tti_comply_status: fallbackStatus } as any;
+      // Fallback: coba varian Title Case jika DB mengharuskan kapitalisasi tertentu
+      const titleCaseStatus = (complyStatus === 'comply') ? 'Comply' : 'Not Comply';
+      const fallbackPayload = { ...updatePayload, tti_comply_status: titleCaseStatus } as any;
       const { error: fallbackErr } = await supabaseAdmin
         .from('orders')
         .update(fallbackPayload)
         .eq('order_id', orderId);
       if (!fallbackErr) {
-        console.warn('TTI status fallback applied due to constraint:', { orderId, from: complyStatus, to: fallbackStatus });
+        console.warn('TTI status fallback (Title Case) applied due to constraint:', { orderId, from: complyStatus, to: titleCaseStatus });
       }
       updateError = fallbackErr;
     }
     if (updateError) {
+      // Tampilkan detail error untuk mempermudah diagnosa di chat
+      const parts: string[] = []
+      const e: any = updateError
+      if (e?.message) parts.push(e.message)
+      if (e?.details) parts.push(e.details)
+      if (e?.hint) parts.push(e.hint)
+      if (e?.code) parts.push(`code=${e.code}`)
+      const reasonText = parts.length ? parts.join(' | ') : 'Tidak diketahui'
       console.error('Error updating E2E timestamp & TTI:', updateError);
-      await client.sendMessage(chatId, '❌ Gagal mengupdate E2E/TTI ke database.');
+      await client.sendMessage(chatId, `❌ Gagal mengupdate E2E/TTI ke database.\n\nAlasan: ${reasonText}`);
       return;
     }
     await client.sendMessage(chatId,
