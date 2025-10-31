@@ -1677,12 +1677,31 @@ async function showLMEPT2UpdateMenu(client: any, chatId: number, telegramId: str
   );
 }
 
-// Util untuk buat timestamp Asia/Jakarta dengan offset +07:00
+// Util untuk buat timestamp Asia/Jakarta dengan offset +07:00 (presisi tanpa bias zona sistem)
 function nowJakartaWithOffset() {
   const now = new Date();
-  const jakarta = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${jakarta.getFullYear()}-${pad(jakarta.getMonth() + 1)}-${pad(jakarta.getDate())} ${pad(jakarta.getHours())}:${pad(jakarta.getMinutes())}:${pad(jakarta.getSeconds())}+07:00`;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '00';
+  const y = get('year'), m = get('month'), d = get('day');
+  const h = get('hour'), mi = get('minute'), s = get('second');
+  return `${y}-${m}-${d} ${h}:${mi}:${s}+07:00`;
+}
+
+// Helper umum untuk konversi Date → string WIB (+07:00) dengan Intl
+function toJakartaOffsetString(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '00';
+  const y = get('year'), m = get('month'), d = get('day');
+  const h = get('hour'), mi = get('minute'), s = get('second');
+  return `${y}-${m}-${d} ${h}:${mi}:${s}+07:00`;
 }
 
 // 📊 Riwayat LME PT2 (mirror gaya bot.js)
@@ -2131,14 +2150,12 @@ async function handleSODUpdate(client: any, chatId: number, telegramId: string, 
       return;
     }
     const hdName = await getUserName(telegramId);
-    const now = new Date();
-    const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const jakartaTimestamp = `${jakartaTime.getFullYear()}-${pad(jakartaTime.getMonth() + 1)}-${pad(jakartaTime.getDate())} ${pad(jakartaTime.getHours())}:${pad(jakartaTime.getMinutes())}:${pad(jakartaTime.getSeconds())}+07:00`;
-    // Set TTI In Progress dan deadline 3x24 jam dari waktu SOD
+    // Timestamp SOD di WIB (+07:00) yang akurat
+    const jakartaTimestamp = nowJakartaWithOffset();
+    // Set TTI In Progress dan deadline 3×24 jam dari waktu SOD (WIB)
     const sodDate = new Date(String(jakartaTimestamp).replace(' ', 'T'));
     const deadlineTime = new Date(sodDate.getTime() + (72 * 60 * 60 * 1000));
-    const deadlineTimestamp = `${deadlineTime.getFullYear()}-${pad(deadlineTime.getMonth() + 1)}-${pad(deadlineTime.getDate())} ${pad(deadlineTime.getHours())}:${pad(deadlineTime.getMinutes())}:${pad(deadlineTime.getSeconds())}+07:00`;
+    const deadlineTimestamp = toJakartaOffsetString(deadlineTime);
     const { error: updateError } = await supabaseAdmin
       .from('orders')
       .update({ sod_timestamp: jakartaTimestamp, tti_comply_status: 'In Progress', tti_comply_deadline: deadlineTimestamp, updated_at: nowJakartaWithOffset() })
